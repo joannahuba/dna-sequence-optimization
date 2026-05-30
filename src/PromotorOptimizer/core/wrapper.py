@@ -1,296 +1,75 @@
 # core/wrappers.py
 
 
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any, Literal
 
 from ..validator import SequenceValidator
 from ..models.model_manager import ModelManager
+from ..pipeline.experiment_tracker import ExperimentTracker
 
 
 class SequencePredictorModelWrapper:
-    """
-    High-level orchestration layer for sequence optimization.
-
-    This wrapper connects together:
-    - sequence optimizers
-    - model evaluation
-    - biological validation
-    - reconstruction workflows
-
-    Responsibilities:
-    -----------------
-    1. Run optimization algorithms on input DNA sequences
-    2. Aggregate all generated candidate sequences
-    3. Validate generated sequences using biological constraints
-    4. Score sequences using all registered models
-    5. Build a unified output table
-
-    """
 
     def __init__(
         self,
+        model_type: Literal["ensemble", "single"],
+        mode : Literal["optimization", "reconstruction"],
+        sequences: List[str],
         model_manager: ModelManager,
         optimizers_list: List[Any],
+        interpreters_list: List[Any],
         validation_config: Optional[Dict] = None,
     ):
         """
-        Initialize optimization wrapper.
-
-        Parameters
-        ----------
-        model_manager : ModelManager
-            Central manager responsible for:
-            - model predictions
-            - ensemble scoring
-            - interpretation handling
-
-        optimizers_list : List[Any]
-            List of optimizer instances implementing:
-                BaseSequenceOptimizer
-
-        validation_config : Optional[Dict]
-            Configuration dictionary passed to SequenceValidator.
-
-            Example:
-            {
-                "gc_percent_range": (0.4, 0.6),
-                "max_homopolymer_at": 5,
-                "min_length": 50
-            }
+        Initialization of all sequences to evaluate, mode in which we want to evaluate them
+        Interpreters we want to use per each sequence and optimizers to use per each (sequence, interpreter)
         """
 
+        self.mode = mode
+        self.sequences = sequences
         self.model_manager = model_manager
         self.optimizers_list = optimizers_list
+        self.interpreters_list = interpreters_list
 
         # Centralized biological validation engine
         self.validator = SequenceValidator(
             validation_config
         )
+        self.output = dict() # {"Interpreter": {"Optimizer" {"seq": {["iteration", "sequence", "activity", "is_valid"]}}}"}
 
     # -------------------------------------------------
     # MAIN OPTIMIZATION PIPELINE
     # -------------------------------------------------
-    def OptimizeSequence(
-        self,
-        sequences: Dict[str, Union[str, Dict]],
-        config: Optional[Dict] = None,
-    ):
-        """
-        Main optimization execution pipeline.
+    def OptimizeSequences(self, config: Optional[Dict] = None):
+        # STEP 1: iterate thought all sequences
+        for seq in self.sequences:
+            interpreter_dict = dict()
 
-        Workflow:
-        ---------
-        1. Normalize input format
-        2. Execute all optimizers
-        3. Collect generated candidates
-        4. Validate candidates biologically
-        5. Score candidates using all models
-        6. Aggregate final results
-
-        Parameters
-        ----------
-        sequences : Dict[str, Union[str, Dict]]
-            Input sequences.
-
-            Supported formats:
-            {
-                "sample_1": "ATCG..."
-            }
-
-            or
-
-            {
-                "sample_1": {
-                    "sequence": "ATCG...",
-                    "method": "optimization"
-                }
-            }
-
-        config : Optional[Dict]
-            Runtime optimizer configuration.
-
-            Example:
-            {
-                "iterations": 20,
-                "population_size": 64
-            }
-
-        Returns
-        -------
-        Dict
-            Mapping:
-            {
-                sample_name: [
-                    {
-                        "sequence": str,
-                        "scores": dict,
-                        "ensemble_score": float,
-                        "is_valid": bool
-                    }
-                ]
-            }
-        """
-
-        # Normalize all input structures into one format
-        normalized = self._normalize_inputs(
-            sequences
-        )
-
-        results = {}
-
-        # -------------------------------------------------
-        # PROCESS EACH SAMPLE SEPARATELY
-        # -------------------------------------------------
-        for sample_name, payload in normalized.items():
-
-            original_sequence = payload["sequence"]
-
-            # Candidate sequence pool
-            # Using set removes duplicates automatically
-            candidate_pool = set([
-                original_sequence
-            ])
-
-            # Stores optimizer-specific metadata
-            optimizer_metadata = {}
-
-            # -----------------------------------------
-            # RUN OPTIMIZERS
-            # -----------------------------------------
-            for optimizer in self.optimizers_list:
-
-                try:
-
-                    # Execute optimization algorithm
-                    candidates = optimizer(
-                        sequence=original_sequence,
-                        evaluator=self.model_manager,
-                        validator=self.validator,
-                        config=config,
-                    )
-
-                    # Store generated sequences
-                    for candidate in candidates:
-
-                        candidate_pool.add(
-                            candidate.sequence
-                        )
-
-                        optimizer_metadata[
-                            candidate.sequence
-                        ] = {
-                            "optimizer": candidate.optimizer_source,
-                            "iteration": candidate.iteration,
-                            "mutation_count": candidate.mutation_count,
-                        }
-
-                except Exception as e:
-
-                    print(
-                        f"Optimizer failed: "
-                        f"{optimizer.__class__.__name__}: {e}"
-                    )
-
-            # Convert set -> list for deterministic processing
-            candidate_pool = list(candidate_pool)
-
-            # -----------------------------------------
-            # VALIDATION
-            # -----------------------------------------
-            # Apply biological filtering:
-            # - GC content
-            # - homopolymers
-            # - length constraints
-            validation_results = self.validator(
-                candidate_pool
-            )
-
-            validation_map = {
-                seq: valid
-                for seq, valid in zip(
-                    candidate_pool,
-                    validation_results
-                )
-            }
-
-            # -----------------------------------------
-            # MODEL SCORING
-            # -----------------------------------------
-            # Run all models on all candidate sequences
-            scores = self.model_manager.predict_sequences(
-                candidate_pool
-            )
-
-            # -----------------------------------------
-            # BUILD FINAL TABLE
-            # -----------------------------------------
-            table = []
-
-            for seq in candidate_pool:
-
-                model_scores = scores.get(seq, {})
-
-                # Simple ensemble aggregation:
-                # arithmetic mean of model predictions
-                ensemble_score = (
-                    sum(model_scores.values()) / len(model_scores)
-                    if model_scores
-                    else 0.0
-                )
-
-                row = {
-                    "sequence": seq,
-                    "original_sequence": original_sequence,
-                    "scores": model_scores,
-                    "ensemble_score": ensemble_score,
-                    "is_valid": validation_map[seq],
-                    "optimizer_metadata": optimizer_metadata.get(seq, {})
-                }
-
-                table.append(row)
-
-            # Store per-sample results
-            results[sample_name] = table
-
-        return results
+            # STEP 2: iterate through all interpreters
+            for interpreter in self.interpreters_list:
+                optimizer_dict = dict()
+                interpretation = interpreter.explain(self.model_manager, seq)
+                
+                # STEP 3: iterate through all optimizers
+                for optimizer in self.optimizers_list:
+                    optimization = optimizer.optimize(decide what to put there)
+                    optimizer_dict[optimizer.__class__.__name__] = optimization
+                
+                interpreter_dict[interpreter.__class__.__name__] = {"interpretation": interpretation, 
+                                                     "optimizers_results": optimizer_dict}
+                
+            self.output[seq] = interpreter_dict
 
     # -------------------------------------------------
     # RECONSTRUCTION
     # -------------------------------------------------
-    def ReconstructSequence(
+    def ReconstructSequences(
         self,
-        sequences: Dict[str, str],
         mutation_n: int,
         org_expression: Optional[float] = None,
         reconstruction_config: Optional[Dict] = None,
     ):
-        """
-        Specialized optimization mode for sequence reconstruction.
-
-        Reconstruction mode attempts to:
-        - preserve similarity to original sequence
-        - constrain number of mutations
-        - optionally target expression levels
-
-        Parameters
-        ----------
-        sequences : Dict[str, str]
-            Input DNA sequences.
-
-        mutation_n : int
-            Maximum or exact number of allowed mutations.
-
-        org_expression : Optional[float]
-            Optional target regulatory activity level.
-
-        reconstruction_config : Optional[Dict]
-            Additional reconstruction-specific parameters.
-
-        Returns
-        -------
-        Dict
-            Same output structure as OptimizeSequence().
-        """
+        
 
         config = reconstruction_config or {}
 
@@ -302,78 +81,78 @@ class SequencePredictorModelWrapper:
         })
 
         return self.OptimizeSequence(
-            sequences,
             config=config
         )
+
 
     # -------------------------------------------------
     # INPUT NORMALIZATION
     # -------------------------------------------------
-    def _normalize_inputs(
-        self,
-        sequences
-    ):
-        """
-        Convert multiple supported input formats
-        into a unified internal representation.
+    # def _normalize_inputs(
+    #     self,
+    #     sequences
+    # ):
+    #     """
+    #     Convert multiple supported input formats
+    #     into a unified internal representation.
 
-        Supported:
-        ----------
-        {
-            "sample": "ATCG"
-        }
+    #     Supported:
+    #     ----------
+    #     {
+    #         "sample": "ATCG"
+    #     }
 
-        and
+    #     and
 
-        {
-            "sample": {
-                "sequence": "ATCG",
-                "method": "optimization"
-            }
-        }
+    #     {
+    #         "sample": {
+    #             "sequence": "ATCG",
+    #             "method": "optimization"
+    #         }
+    #     }
 
-        Returns
-        -------
-        Dict
-            Normalized mapping:
-            {
-                sample_name: {
-                    "sequence": str,
-                    "method": str
-                }
-            }
-        """
+    #     Returns
+    #     -------
+    #     Dict
+    #         Normalized mapping:
+    #         {
+    #             sample_name: {
+    #                 "sequence": str,
+    #                 "method": str
+    #             }
+    #         }
+    #     """
 
-        normalized = {}
+    #     normalized = {}
 
-        for name, value in sequences.items():
+    #     for name, value in sequences.items():
 
-            # Simple shorthand format
-            if isinstance(value, str):
+    #         # Simple shorthand format
+    #         if isinstance(value, str):
 
-                normalized[name] = {
-                    "sequence": value,
-                    "method": "optimization"
-                }
+    #             normalized[name] = {
+    #                 "sequence": value,
+    #                 "method": "optimization"
+    #             }
 
-            # Expanded configuration format
-            elif isinstance(value, dict):
+    #         # Expanded configuration format
+    #         elif isinstance(value, dict):
 
-                normalized[name] = {
-                    "sequence": value["sequence"],
-                    "method": value.get(
-                        "method",
-                        "optimization"
-                    )
-                }
+    #             normalized[name] = {
+    #                 "sequence": value["sequence"],
+    #                 "method": value.get(
+    #                     "method",
+    #                     "optimization"
+    #                 )
+    #             }
 
-            else:
+    #         else:
 
-                raise TypeError(
-                    "Sequence value must be str or dict"
-                )
+    #             raise TypeError(
+    #                 "Sequence value must be str or dict"
+    #             )
 
-        return normalized
+    #     return normalized
 # from typing import Any, Dict, List, Optional, Union
 # import tempfile
 # import pandas as pd
