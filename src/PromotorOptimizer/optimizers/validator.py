@@ -140,6 +140,15 @@ class SequenceValidator:
                     is_valid[idx] = False
 
         return is_valid
+    
+    def is_valid(self, sequence: str) -> bool:
+        """
+        Compatibility wrapper for single-sequence validation.
+        Returns True if sequence passes all constraints.
+        """
+
+        # reuse the batch pipeline 
+        return self([sequence])[0]
 
 # FOR DEBUGGING / EXAMPLE
 if __name__ == "__main__":
@@ -148,8 +157,8 @@ if __name__ == "__main__":
         "max_homopolymer_at": 5,
         "max_homopolymer_gc": 4,
         "gc_percent_range": (0.4, 0.6),
-        "min_length": 10,
-        "max_length": 50
+        "min_length": 230,
+        "max_length": 230
     }
 
     validator = SequenceValidator(config)

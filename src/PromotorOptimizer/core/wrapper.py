@@ -54,11 +54,11 @@ class SequencePredictorModelWrapper:
                 # STEP 3: iterate through all optimizers
                 for optimizer in self.optimizers_list:
                     result = optimizer.optimize(
-                        sequence=seq,
-                        model_manager=self.model_manager,
-                        interpretation=interpretation,
-                        config=config
-                    )
+                            sequence=seq,
+                            model_manager=self.model_manager,
+                            interpretation=interpretation,
+                            config=config
+                        )
 
                     optimizer_dict[
                         optimizer.__class__.__name__

@@ -2,7 +2,7 @@ import heapq
 
 from .base_optimizer import BaseOptimizer
 from .mutation_generator import MutationGenerator
-from .constraint_handler import ConstraintHandler
+from .validator import SequenceValidator
 
 
 class BeamSearchOptimizer(
@@ -11,11 +11,13 @@ class BeamSearchOptimizer(
 
     def __init__(
         self,
+        validation_config,
         beam_width=20,
         candidates_per_parent=10,
-        iterations=25
+        iterations=25,
     ):
 
+        self.validator = SequenceValidator(validation_config)
         self.beam_width = beam_width
         self.candidates_per_parent = (
             candidates_per_parent
@@ -85,9 +87,7 @@ class BeamSearchOptimizer(
                         )
                     )
 
-                    if not ConstraintHandler.is_valid(
-                        child
-                    ):
+                    if not self.validator.is_valid(child):
                         continue
 
                     score = self._score(

@@ -34,7 +34,17 @@ class PipelineRunner:
 
         # 2. LOAD OPTIMIZERS
         print(f"[INFO] Loading optimizers: {config.optimizers}")
-        self.optimizers = OptimizerRegistry.load(config.optimizers)
+        validation_config = {
+            "max_homopolymer_at": 5,
+            "max_homopolymer_gc": 4,
+            "gc_percent_range": (0.4, 0.6),
+            "min_length": 230,
+            "max_length": 230
+        }
+        self.optimizers = OptimizerRegistry.load(
+            config.optimizers,
+            validation_config=validation_config
+        )
 
         # 3. LOAD INTERPRETERS
         print(f"[INFO] Loading interpreters: {config.interpreters}")
@@ -73,6 +83,7 @@ class PipelineRunner:
 
         # 7. WRAPPER
         print("[INFO] Building wrapper")
+
 
         self.wrapper = SequencePredictorModelWrapper(
             model_type=self.model_type,
