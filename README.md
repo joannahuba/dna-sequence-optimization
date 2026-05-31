@@ -2,7 +2,7 @@
 
 ## Code Workflow
 
-1. **Input Normalization:** Accepts promoter sequences as raw strings or nested configurations and standardizes them into a unified format.
+1. **Input Normalization:** Accepts promoter sequences as raw strings or nested configurations and standardizes them into a unified format. 
 2. **Trajectory Collection:** Passes sequences to optimizers and captures **all intermediate and final variants** (the entire mutation history) generated during the optimization process.
 3. **Cascading Validation:** Filters the accumulated sequence pool using fast C-level Regex (`SequenceValidator`). Instantly flags variants that violate structural constraints (length boundaries, GC-content range, or homopolymer repeats).
 4. **Virtual RAM Storage:** Streams all unique candidate sequences into an in-memory virtual TSV file (`tempfile`), bypassing disk I/O.
