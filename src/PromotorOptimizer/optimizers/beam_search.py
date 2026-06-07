@@ -17,47 +17,10 @@ class BeamSearchOptimizer(BaseOptimizer):
         candidates_per_parent=10,
         iterations=50,
     ):
-
         self.validator = SequenceValidator(validation_config)
         self.beam_width = beam_width
         self.candidates_per_parent = candidates_per_parent
         self.iterations = iterations
-
-    def _score(
-        self,
-        model_manager,
-        sequence
-    ):
-
-        result = model_manager.predict_sequences(
-            [sequence]
-        )
-
-        scores = list(
-            result[sequence].values()
-        )
-
-        return sum(scores) / len(scores)
-
-    def _reconstruction_score(
-        self,
-        model_manager,
-        sequence,
-        target_expression
-    ):
-        """
-        Higher is better.
-        Best value = 0.
-        """
-
-        predicted = self._score(
-            model_manager,
-            sequence
-        )
-
-        return -abs(
-            predicted - target_expression
-        )
 
     def optimize(
         self,
@@ -67,243 +30,103 @@ class BeamSearchOptimizer(BaseOptimizer):
         config
     ):
 
-        method = config.get(
-            "method",
-            "optimization"
-        )
+        method = config.get("method", "optimization")
 
-        mutation_budget = config.get(
-            "mutation_n",
-            None
-        )
+        mutation_budget = config.get("mutation_budget", None)
+        target_expression = config.get("target_expression", None)
 
-        target_expression = config.get(
-            "org_expression",
-            None
-        )
+        importance = interpretation.importance_scores
 
-        importance = (
-            interpretation.importance_scores
-        )
+        # -------------------------
+        # scoring
+        # -------------------------
+        def score(seq):
+            result = model_manager.predict_sequences([seq])
+            return sum(result[seq].values()) / len(result[seq])
 
-        logger.info(
-            "[BeamSearch] Starting optimization "
-            f"(mode={method}, sequence_length={len(sequence)})"
-        )
+        def reconstruction_score(seq):
+            return -abs(score(seq) - target_expression)
+
+        # -------------------------
+        # init
+        # -------------------------
+        beam = [sequence]
+        best_seq = sequence
 
         if method == "reconstruction":
-            logger.info(
-                "[BeamSearch] Reconstruction target="
-                f"{target_expression:.4f}, "
-                f"mutation_budget={mutation_budget}"
-            )
-
-        beam = [sequence]
+            best_score = reconstruction_score(sequence)
+            max_iterations = mutation_budget  # ✅ FIX
+        else:
+            best_score = score(sequence)
+            max_iterations = self.iterations
 
         trajectory = []
 
-        if method == "reconstruction":
+        print(f"[BeamSearch] mode={method} iterations={max_iterations}")
 
-            best_score = self._reconstruction_score(
-                model_manager,
-                sequence,
-                target_expression
-            )
-
-            logger.info(
-                "[BeamSearch] Initial reconstruction score=%.6f",
-                best_score
-            )
-
-        else:
-
-            best_score = self._score(
-                model_manager,
-                sequence
-            )
-
-            logger.info(
-                "[BeamSearch] Initial activity score=%.6f",
-                best_score
-            )
-
-        best_seq = sequence
-
-        max_iterations = (
-            mutation_budget
-            if (
-                method == "reconstruction"
-                and mutation_budget is not None
-            )
-            else self.iterations
-        )
-
-        logger.info(
-            "[BeamSearch] Running for %d iterations",
-            max_iterations
-        )
-
-        for iteration in range(max_iterations):
+        # -------------------------
+        # main loop
+        # -------------------------
+        for it in range(max_iterations):
 
             candidates = []
 
-            invalid_count = 0
-
             for parent in beam:
 
-                if not self.validator.is_valid(
-                        parent
-                    ):
-                    print("parent is not valid")
-                for _ in range(
-                    self.candidates_per_parent
-                ):
+                if not self.validator.is_valid(parent):
+                    continue
 
-                    child = (
-                        MutationGenerator.hybrid_mutation(
-                            parent,
-                            importance,
-                            n_mutations=1,
-                            lambda_weight=0.8
-                        )
+                for _ in range(self.candidates_per_parent):
+
+                    # IMPORTANT: keep small mutation step
+                    child = MutationGenerator.hybrid_mutation(
+                        parent,
+                        importance,
+                        n_mutations=1,
+                        lambda_weight=0.8
                     )
 
-                    if not self.validator.is_valid(
-                        child
-                    ):
-                        invalid_count += 1
+                    if not self.validator.is_valid(child):
                         continue
 
-                    if method == "reconstruction":
-
-                        score = (
-                            self._reconstruction_score(
-                                model_manager,
-                                child,
-                                target_expression
-                            )
-                        )
-
-                    else:
-
-                        score = self._score(
-                            model_manager,
-                            child
-                        )
-
-                    candidates.append(
-                        (score, child)
-                    )
+                    s = reconstruction_score(child) if method == "reconstruction" else score(child)
+                    candidates.append((s, child))
 
             if not candidates:
-
-                logger.warning(
-                    "[BeamSearch] Iteration %d produced "
-                    "no valid candidates. Stopping.",
-                    iteration
-                )
-
+                print(f"[BeamSearch] STOP iter={it} (no valid candidates)")
                 break
 
-            beam = [
-                seq
-                for _, seq in heapq.nlargest(
-                    self.beam_width,
-                    candidates
-                )
-            ]
+            candidates.sort(reverse=True, key=lambda x: x[0])
 
-            current_best_score, current_best_seq = max(
-                candidates,
-                key=lambda x: x[0]
-            )
+            beam = [c[1] for c in candidates[:self.beam_width]]
+
+            current_best_score, current_best_seq = candidates[0]
 
             if current_best_score > best_score:
-
-                improvement = (
-                    current_best_score
-                    - best_score
-                )
-
                 best_score = current_best_score
                 best_seq = current_best_seq
 
-                logger.info(
-                    "[BeamSearch] Iteration %d: "
-                    "new best score %.6f "
-                    "(improvement %.6f)",
-                    iteration,
-                    best_score,
-                    improvement
-                )
+            trajectory.append({
+                "iteration": it,
+                "score": float(best_score),
+                "sequence": best_seq
+            })
 
-            logger.info(
-                "[BeamSearch] Iteration %d | "
-                "valid=%d | invalid=%d | "
-                "best=%.6f",
-                iteration,
-                len(candidates),
-                invalid_count,
-                best_score
-            )
+            print(f"[BeamSearch] iter={it} best={best_score:.5f}")
 
-            trajectory.append(
-                {
-                    "iteration": iteration,
-                    "sequence": best_seq,
-                    "score": float(best_score),
-                    "valid": True
-                }
-            )
-
-        logger.info(
-            "[BeamSearch] Search finished. "
-            "Best score=%.6f",
-            best_score
-        )
-
+        # -------------------------
+        # output
+        # -------------------------
         result = {
             "best_sequence": best_seq,
             "trajectory": trajectory
         }
 
         if method == "reconstruction":
-
-            predicted_activity = self._score(
-                model_manager,
-                best_seq
-            )
-
-            reconstruction_error = abs(
-                predicted_activity
-                - target_expression
-            )
-
-            logger.info(
-                "[BeamSearch] Reconstruction complete | "
-                "target=%.6f | predicted=%.6f | "
-                "error=%.6f",
-                target_expression,
-                predicted_activity,
-                reconstruction_error
-            )
-
-            result["reconstruction_error"] = (
-                reconstruction_error
-            )
-
-            result["predicted_activity"] = (
-                predicted_activity
-            )
-
+            predicted = score(best_seq)
+            result["predicted_activity"] = predicted
+            result["reconstruction_error"] = abs(predicted - target_expression)
         else:
-
-            logger.info(
-                "[BeamSearch] Optimization complete | "
-                "best_activity=%.6f",
-                best_score
-            )
-
             result["best_score"] = best_score
 
         return result

@@ -63,14 +63,8 @@ class PipelineRunner:
 
             df = pd.read_csv(
                 self.config.input_path,
-                sep=r"\s+",
-                header=None,
-                names=[
-                    "id",
-                    "sequence",
-                    "introduced_mutations",
-                    "original_activity"
-                ]
+                sep="\t",
+                header=0
             )
 
             self.sequences = {
@@ -170,8 +164,6 @@ class PipelineRunner:
             
             # TODO mutation_budget, org_expression aby to jakoś wczytywać
             results = self.wrapper.ReconstructSequences(
-                mutation_n=self.config.mutation_budget,
-                org_expression=None,
                 reconstruction_config={
                     "iterations": self.config.iterations
                 }
