@@ -427,3 +427,14 @@ class InterpreterRegistry:
 ```bash
 --interpreters saliency random
 ```
+
+## TO DO na ten tydzień
+skończenie interpreterów, pododawanie opcji ile chce sie mutacji, aby interpretacje były per pozycja zasada a nie per pozycja
+dodanie k-merów
+
+dodanie drugiego/innych modelów narazie jest tylko mój
+
+dokonczenie guided mutation (dodanie opcji w optimizerze)
+
+dodanie konfliktów modeli-> chyba w optimizerze zapisywać dla każdego zapisu
+

@@ -35,9 +35,9 @@ class PipelineRunner:
         # 2. LOAD OPTIMIZERS
         print(f"[INFO] Loading optimizers: {config.optimizers}")
         validation_config = {
-            "max_homopolymer_at": 5,
-            "max_homopolymer_gc": 4,
-            "gc_percent_range": (0.4, 0.6),
+            "max_homopolymer_at": 9,
+            "max_homopolymer_gc": 7,
+            "gc_percent_range": (0.25, 0.8),
             "min_length": 230,
             "max_length": 230
         }
@@ -53,19 +53,80 @@ class PipelineRunner:
         # 4. LOAD INPUT SEQUENCES
         print(f"[INFO] Reading input file: {self.config.input_path}")
 
-        df = pd.read_csv(
-            self.config.input_path,
-            sep=r"\s+",
-            header=None,
-            names=["id", "sequence"]
+        # 4. LOAD INPUT SEQUENCES
+        print(
+            f"[INFO] Reading input file: "
+            f"{self.config.input_path}"
         )
-        print("input df")
+
+        if config.task_mode == "constrained_recovery":
+
+            df = pd.read_csv(
+                self.config.input_path,
+                sep=r"\s+",
+                header=None,
+                names=[
+                    "id",
+                    "sequence",
+                    "introduced_mutations",
+                    "original_activity"
+                ]
+            )
+
+            self.sequences = {
+                row["id"]: {
+                    "sequence":
+                        row["sequence"],
+
+                    "mutation_budget":
+                        int(
+                            row[
+                                "introduced_mutations"
+                            ]
+                        ),
+
+                    "original_activity":
+                        float(
+                            row[
+                                "original_activity"
+                            ]
+                        )
+                }
+                for _, row in df.iterrows()
+            }
+
+        else:
+
+            df = pd.read_csv(
+                self.config.input_path,
+                sep=r"\s+",
+                header=None,
+                names=[
+                    "id",
+                    "sequence"
+                ]
+            )
+
+            self.sequences = {
+                row["id"]: {
+                    "sequence":
+                        row["sequence"],
+
+                    "mutation_budget":
+                        self.config.mutation_budget,
+
+                    "original_activity":
+                        None
+                }
+                for _, row in df.iterrows()
+            }
+
         print(df)
 
-        self.sequences = {
-            row["id"]: row["sequence"]
-            for _, row in df.iterrows()
-        }
+        print(
+            f"[INFO] Loaded "
+            f"{len(self.sequences)} sequences"
+        )
 
         print(f"[INFO] Loaded {len(self.sequences)} sequences")
 
@@ -106,7 +167,8 @@ class PipelineRunner:
         if self.config.task_mode == "constrained_recovery":
 
             print("[INFO] Running reconstruction pipeline")
-
+            
+            # TODO mutation_budget, org_expression aby to jakoś wczytywać
             results = self.wrapper.ReconstructSequences(
                 mutation_n=self.config.mutation_budget,
                 org_expression=None,

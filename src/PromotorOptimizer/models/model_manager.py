@@ -215,3 +215,5 @@ class ModelManager(BaseModelManager):
             "min": float(scores.min()),
             "max": float(scores.max())
         }
+    
+# TODO dataloader

@@ -49,7 +49,7 @@ class DeepSTARRLike(nn.Module):
         self._to_linear = x.numel()
 
     def forward(self, x):
-        print(x)
+        # print(x)
         # print("INPUT:", x.shape)
 
         x = x.permute(0, 2, 1)

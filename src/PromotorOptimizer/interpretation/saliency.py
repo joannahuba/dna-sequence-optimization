@@ -1,5 +1,4 @@
 import torch
-
 from .base import BaseInterpreter
 from ..core.types import InterpretationResult
 from ..utils.preprocessing import encode_one
@@ -17,19 +16,13 @@ class SaliencyInterpreter(BaseInterpreter):
         device = model_manager.get_device()
         models = model_manager.get_models()
 
-        # (L, 4)
-        
         x = torch.tensor(
             encode_one(sequence),
             dtype=torch.float32,
             device=device
-        )
-        # print("Encoded shape:", x.shape)
+        ).unsqueeze(0)  # (1, L, 4)
 
-        # (1, L, 4)
-        x = x.unsqueeze(0)
-
-        saliency_maps = []
+        per_model_maps = []
         model_scores = {}
 
         for name, meta in models.items():
@@ -40,33 +33,27 @@ class SaliencyInterpreter(BaseInterpreter):
 
             x_req = x.clone().detach().requires_grad_(True)
 
-            # print("Sequence length:", len(sequence))
-            # print("Input tensor shape:", x_req.shape)
-            active, ratio = model(x_req)
-
+            _, ratio = model(x_req)
             score = ratio.mean()
 
-            model_scores[name] = float(
-                score.detach().cpu()
-            )
+            model_scores[name] = float(score.detach().cpu())
 
             model.zero_grad()
-
             score.backward()
 
-            grad = x_req.grad
+            grad = x_req.grad  # (1, L, 4)
 
-            # (1, L, 4) -> (L,)
-            saliency = grad.abs().sum(dim=2).squeeze(0)
+            # IMPORTANT: keep per-base importance
+            saliency = grad.abs().squeeze(0)  # (L, 4)
 
-            saliency_maps.append(saliency)
+            per_model_maps.append(saliency)
 
-        saliency_maps = torch.stack(saliency_maps)
+        per_model_maps = torch.stack(per_model_maps)  # (M, L, 4)
 
         if model_type == "ensemble":
-            importance = saliency_maps.mean(dim=0)
+            importance = per_model_maps.mean(dim=0)  # (L, 4)
         else:
-            importance = saliency_maps[0]
+            importance = per_model_maps[0]  # (L, 4)
 
         return InterpretationResult(
             method_name="Saliency",
