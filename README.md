@@ -90,6 +90,19 @@ python main.py \
   --iterations 100
 ```
 
+```bash
+# max debugging sript
+python main.py \
+  --input data/reconstruction_input.tsv \
+  --output results_max.json \
+  --task-mode constrained_recovery \
+  --models noadapters_model \
+  --optimizers beam_search \
+  --interpreters saliency \
+  --iterations 100
+```
+
+
 ---
 
 ## 1.2 Arguments
