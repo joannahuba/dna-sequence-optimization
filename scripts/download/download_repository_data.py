@@ -5,7 +5,7 @@ import gdown
 # Environment configuration
 ## Define the input URL and the local target directory
 FOLDER_URL = "https://drive.google.com/drive/folders/1gF4fc0dBgXm5cQ41rYSYj7wxtw13G04I?usp=sharing"
-TARGET_DIR = "./data"
+TARGET_DIR = "."
 
 # Resource identifier extraction
 ## Use a regular expression to capture the folder ID from the URL
