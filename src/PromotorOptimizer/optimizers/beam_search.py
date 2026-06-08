@@ -64,6 +64,31 @@ class BeamSearchOptimizer(BaseOptimizer):
 
         print(f"[BeamSearch] mode={method} iterations={max_iterations}")
 
+
+        # -------------------------
+        # fix cut adapters from mutated sequence: obtain prefixes and sufixes from loader 
+        # Obtain prefix and suffix for `DNADatasetNoAdapters` loaders 
+        # -------------------------
+
+        # Extract adapter coordinate offsets from the active model registry metadata
+        ## Identify if the underlying pipeline used adapter trimming dataset representation
+        prefix_len = 0
+        suffix_len = 0
+        
+        for model_name, model_meta in model_manager.get_models().items():
+            dataset_class = model_meta.get("dataset_class")
+            if dataset_class and dataset_class.__name__ == "DNADatasetNoAdapters":
+                try:
+                    ### Instantiate configuration template to extract runtime adapter calculation rules
+                    input_file = config.get("input_path", "data/reconstruction_input.tsv")
+                    temp_dataset = dataset_class(input_file)
+                    prefix_len = getattr(temp_dataset, "prefix_len", 0)
+                    suffix_len = getattr(temp_dataset, "suffix_len", 0)
+                    break
+                except Exception:
+                    ### Fallback to default index layout if metadata file accessibility fails
+                    pass
+
         # -------------------------
         # main loop
         # -------------------------
@@ -83,7 +108,10 @@ class BeamSearchOptimizer(BaseOptimizer):
                         parent,
                         importance,
                         n_mutations=1,
-                        lambda_weight=0.8
+                        lambda_weight=0.8,
+                        # fix cut adapters from mutated sequence: pass prefix and suffix for parameters
+                        prefix_len=prefix_len,
+                        suffix_len=suffix_len
                     )
 
                     if not self.validator.is_valid(child):
