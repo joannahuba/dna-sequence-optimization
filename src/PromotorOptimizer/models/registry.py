@@ -5,7 +5,9 @@ import torch
 
 from .loaders.deepstarr_loader import load_deepstarr
 from .loaders.zero_loader import load_model_zero
+from .loaders.original_modified import load_original_modified
 from .datasets.dna_dataset import DNADataset
+from .datasets.dna_no_adapters_dataset import DNADatasetNoAdapters
 
 
 class ModelRegistry:
@@ -38,6 +40,19 @@ class ModelRegistry:
                     "dataset_class": DNADataset
                 }
 
+            if name in ["original_modified", "noadapters_model"]:
+
+                model = load_original_modified(
+                    "data/checkpoints/original_modified.pth",
+                    device
+                )
+
+                registry[name] = {
+                    "model": model,
+                    "dataset_class": DNADatasetNoAdapters
+                }
+
+
             # -------------------------
             # DEEPSTARR
             # -------------------------
@@ -52,6 +67,7 @@ class ModelRegistry:
                     "model": model,
                     "dataset_class": DNADataset
                 }
+            
 
             else:
                 raise ValueError(f"Unknown model: {name}")
