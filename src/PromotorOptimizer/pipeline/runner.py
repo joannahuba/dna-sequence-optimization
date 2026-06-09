@@ -35,8 +35,8 @@ class PipelineRunner:
         # 2. LOAD OPTIMIZERS
         print(f"[INFO] Loading optimizers: {config.optimizers}")
         validation_config = {
-            "max_homopolymer_at": 9,
-            "max_homopolymer_gc": 7,
+            "max_homopolymer_at": 8,
+            "max_homopolymer_gc": 12,
             "gc_percent_range": (0.25, 0.8),
             "min_length": 230,
             "max_length": 230

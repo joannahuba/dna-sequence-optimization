@@ -12,9 +12,9 @@ class BeamSearchOptimizer(BaseOptimizer):
     def __init__(
         self,
         validation_config,
-        beam_width=30,
+        beam_width=40,
         top_k_positions=40,
-        iterations=1,
+        iterations=50,
     ):
         self.validator = SequenceValidator(validation_config)
         self.beam_width = beam_width
