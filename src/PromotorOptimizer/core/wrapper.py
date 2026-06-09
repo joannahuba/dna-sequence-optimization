@@ -34,22 +34,32 @@ class SequencePredictorModelWrapper:
         self,
         config: Optional[Dict] = None
     ):
+        """
+        Executes the master sequence optimization pipeline across all registered targets.
 
+        This method coordinates ensemble evaluations, runs interpretation sequences, 
+        and routes live interpreter handles into the iterative optimization execution tracks 
+        to permit dynamic, step-by-step importance matrix recalculation.
+
+        :param config: Runtime properties dictionary containing pipeline tracking variables.
+        :type config: dict, optional
+        :return: Map structure compiling all cross-nested interpreter and optimizer result runs.
+        :rtype: dict
+        """
         print("\n" + "=" * 80)
         print("[PIPELINE] OPTIMIZATION MODE")
         print("=" * 80)
 
         config = config or {}
-
         total_sequences = len(self.sequences)
 
+        # Pipeline loop orchestration
+        ## Process sequence collection iteratively
         for idx, (seq_id, seq_data) in enumerate(
             self.sequences.items(),
             start=1
         ):
-
             start_time = time.time()
-
             seq = seq_data["sequence"]
 
             print(
@@ -63,8 +73,8 @@ class SequencePredictorModelWrapper:
 
             interpreter_dict = {}
 
+            ## Instantiate interpreter layers sequentially
             for interpreter in self.interpreters_list:
-
                 interpreter_name = (
                     interpreter.__class__.__name__
                 )
@@ -74,6 +84,8 @@ class SequencePredictorModelWrapper:
                     f"{interpreter_name}"
                 )
 
+                # Compute baseline importance map
+                ### Evaluate the initial sequence state to preserve static reference profiles
                 interpretation = interpreter.explain(
                     model_manager=self.model_manager,
                     sequence=seq,
@@ -82,8 +94,8 @@ class SequencePredictorModelWrapper:
 
                 optimizer_dict = {}
 
+                ## Traverse registered sequence optimizers
                 for optimizer in self.optimizers_list:
-
                     optimizer_name = (
                         optimizer.__class__.__name__
                     )
@@ -93,11 +105,17 @@ class SequencePredictorModelWrapper:
                         f"{optimizer_name}"
                     )
 
+                    # Dynamic optimization execution
+                    ### create dynamic config
+                    run_config = dict(config) if config else {}
+                    run_config["model_type"] = self.model_type
+
+                    ### Pass the live interpreter instance instead of a static array to fix epistatic mapping errors
                     result = optimizer.optimize(
                         sequence=seq,
                         model_manager=self.model_manager,
-                        interpretation=interpretation,
-                        config=config
+                        interpreter=interpreter,
+                        config=run_config
                     )
 
                     optimizer_dict[
@@ -109,6 +127,8 @@ class SequencePredictorModelWrapper:
                         f"{optimizer_name}"
                     )
 
+                # Aggregate runtime execution logs
+                ### Map initial reference fields and trajectory records into target output spaces
                 interpreter_dict[
                     interpreter_name
                 ] = {
@@ -117,7 +137,6 @@ class SequencePredictorModelWrapper:
                 }
 
             self.output[seq_id] = interpreter_dict
-
             elapsed = (
                 time.time() - start_time
             )
@@ -129,9 +148,7 @@ class SequencePredictorModelWrapper:
             )
 
         print("\n[PIPELINE] Optimization finished")
-
         return self.output
-
     # -------------------------------------------------
     # RECONSTRUCTION
     # -------------------------------------------------
@@ -178,7 +195,11 @@ class SequencePredictorModelWrapper:
             interpreter_dict = {}
 
             for interpreter in self.interpreters_list:
+                interpreter_name = interpreter.__class__.__name__
 
+                print(f"[INFO] Running interpreter: {interpreter_name}")
+
+                # Wywołanie wstępne dla zachowania logów i struktury wyjściowej
                 interpretation = interpreter.explain(
                     model_manager=self.model_manager,
                     sequence=seq,
@@ -188,17 +209,32 @@ class SequencePredictorModelWrapper:
                 optimizer_dict = {}
 
                 for optimizer in self.optimizers_list:
+                    optimizer_name = optimizer.__class__.__name__
 
+                    print(f"[INFO] Running optimizer: {optimizer_name}")
+
+                    # Konfiguracja runtime z wstrzyknięciem typu modelu
+                    run_config = dict(reconstruction_config)
+                    run_config.update({
+                        "mutation_budget": mutation_budget,
+                        "target_expression": original_activity,
+                        "method": "reconstruction",
+                        "iterations": mutation_budget,
+                        "model_type": self.model_type
+                    })
+
+                    # Dynamiczne uruchomienie z przekazaniem instancji interpretera
                     result = optimizer.optimize(
                         sequence=seq,
                         model_manager=self.model_manager,
-                        interpretation=interpretation,
-                        config=config
+                        interpreter=interpreter,
+                        config=run_config
                     )
 
-                    optimizer_dict[optimizer.__class__.__name__] = result
+                    optimizer_dict[optimizer_name] = result
+                    print(f"[INFO] Optimizer finished: {optimizer_name}")
 
-                interpreter_dict[interpreter.__class__.__name__] = {
+                interpreter_dict[interpreter_name] = {
                     "interpretation": interpretation,
                     "optimizers_results": optimizer_dict
                 }

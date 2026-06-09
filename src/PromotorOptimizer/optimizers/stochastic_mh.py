@@ -39,18 +39,21 @@ class SimulatedAnnealingOptimizer(BaseOptimizer):
         self,
         sequence,
         model_manager,
-        interpretation,
+        interpreter,
         config
     ):
         """
         Executes a stochastically guided cooling track to optimize the DNA input string.
 
+        This method dynamically re-computes importance attribution scores for the 
+        active sequence coordinate state during each iteration to handle epistatic regulatory changes.
+
         :param sequence: Target wild-type or broken base string context.
         :type sequence: str
         :param model_manager: Unified ensemble model coordination stack interface.
         :type model_manager: ModelManager
-        :param interpretation: Result dataclass matching extracted position attribution arrays.
-        :type interpretation: InterpretationResult
+        :param interpreter: Live implementation instance of BaseInterpreter to re-evaluate gradients.
+        :type interpreter: BaseInterpreter
         :param config: Runtime dictionary payload mapping target modes, labels, and mutation limits.
         :type config: dict
         :return: Map structure compiling the optimal string sequence and performance log tracks.
@@ -62,8 +65,22 @@ class SimulatedAnnealingOptimizer(BaseOptimizer):
         mutation_budget = config.get("mutation_budget", None)
         target_expression = config.get("target_expression", None)
         iterations = config.get("iterations", 100)
+        model_type = config.get("model_type", "ensemble")
 
-        importance = interpretation.importance_scores
+        prefix_len = 0
+        suffix_len = 0
+
+        for model_meta in model_manager.get_models().values():
+            dataset_class = model_meta.get("dataset_class")
+            if dataset_class and dataset_class.__name__ == "DNADatasetNoAdapters":
+                try:
+                    input_file = config.get("input_path", "data/reconstruction_input.tsv")
+                    temp_dataset = dataset_class(input_file)
+                    prefix_len = getattr(temp_dataset, "prefix_len", 0)
+                    suffix_len = getattr(temp_dataset, "suffix_len", 0)
+                    break
+                except Exception as e:
+                    pass
 
         # Define localized performance evaluators
         ## Raw prediction averaging
@@ -88,12 +105,22 @@ class SimulatedAnnealingOptimizer(BaseOptimizer):
 
         # Core optimization loop execution
         for it in range(iterations):
+            ## Compute live position sensitivity profiles dynamically for the current sequence state
+            interpretation = interpreter.explain(
+                model_manager=model_manager,
+                sequence=current_seq,
+                model_type=model_type
+            )
+            importance = interpretation.importance_scores
+
             ## Generate candidate via directed mutation mutations
             ### Draw mutation step single position parameters
             candidate_seq = MutationGenerator.hybrid_mutation(
                 sequence=current_seq,
                 importance_scores=importance,
-                n_mutations=1
+                n_mutations=1,
+                prefix_len=prefix_len,
+                suffix_len=suffix_len
             )
 
             ## Validate structural and biological properties
@@ -125,6 +152,7 @@ class SimulatedAnnealingOptimizer(BaseOptimizer):
                 "iteration": it,
                 "score": float(best_score),
                 "sequence": best_seq,
+                "interpreter_weights": importance,
                 "temperature": temperature
             })
 

@@ -1,8 +1,9 @@
 # optimizers/registry.py
 
 from .beam_search import BeamSearchOptimizer
-from .simulated_annealing import SimulatedAnnealingOptimizer # Add import line
-
+from .stochastic_mh import SimulatedAnnealingOptimizer # Add import line
+from .beam_search_stochastic_mh import StochasticBeamSearchMetropolis
+from .beam_search_stochastic_boltzman import StochasticBeamSearchBoltzmann
 
 class OptimizerRegistry:
 
@@ -16,8 +17,12 @@ class OptimizerRegistry:
                 registry.append(
                     BeamSearchOptimizer(validation_config)
                 )
-            elif name == "simulated_annealing": # Add mapping branch
+            elif name == "search_stochastic_mh": # Add mapping branch
                 registry.append(SimulatedAnnealingOptimizer(validation_config))
+            elif name == "beam_search_stochastic_mh": # Add mapping branch
+                registry.append(StochasticBeamSearchMetropolis(validation_config))
+            elif name == "beam_search_stochastic_boltzman": # Add mapping branch
+                registry.append(StochasticBeamSearchBoltzmann(validation_config))
             else:
                 raise ValueError(f"Unknown optimizer {name}")
 

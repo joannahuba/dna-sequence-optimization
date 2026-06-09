@@ -10,7 +10,7 @@ class BaseOptimizer(ABC):
         self,
         sequence,
         model_manager,
-        interpretation,
+        interpreter,
         config
     ):
         pass

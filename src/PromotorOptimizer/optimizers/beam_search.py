@@ -25,33 +25,51 @@ class BeamSearchOptimizer(BaseOptimizer):
         self,
         sequence,
         model_manager,
-        interpretation,
+        interpreter,
         config
     ):
+        """
+        Executes the position-scanning Beam Search optimization tracking loop.
 
+        This method dynamically re-computes importance attribution scores per sequence 
+        in the beam during each iteration to handle epistatic regulatory changes.
+
+        :param sequence: Seed wild-type or disrupted DNA sequence string.
+        :type sequence: str
+        :param model_manager: Unified evaluation suite manager coordination stack.
+        :type model_manager: ModelManager
+        :param interpreter: Live implementation instance of BaseInterpreter to re-evaluate gradients.
+        :type interpreter: BaseInterpreter
+        :param config: Execution properties map containing runtime limits and objectives.
+        :type config: dict
+        :return: Results map detailing the optimal sequence and iteration logs.
+        :rtype: dict
+        """
+        # Configuration parsing and parameter setup
+        ## Extract operational modalities from the configuration map
         method = config.get("method", "optimization")
         mutation_budget = config.get("mutation_budget", None)
         target_expression = config.get("target_expression", None)
-
-        importance = interpretation.importance_scores
+        model_type = config.get("model_type", "ensemble")
 
         logger.info(
             f"[BeamSearch-SCAN] start | method={method} | "
             f"beam_width={self.beam_width} | top_k={self.top_k_positions}"
         )
 
-        # -------------------------
-        # scoring functions
-        # -------------------------
+        # Performance evaluation functions
+        ## Define raw ensemble prediction scoring mechanics
         def score(seq):
             result = model_manager.predict_sequences([seq])[seq]
             return sum(result.values()) / len(result)
 
+        ## Define alternative tracking for target reconstruction tasks
         def reconstruction_score(seq):
             # return -abs(score(seq) - target_expression)
             result = model_manager.predict_sequences([seq])[seq]
             return sum(result.values()) / len(result)
 
+        ## Assign target evaluation functions and boundary maximum iteration bounds
         if method == "reconstruction":
             candidate_score_fn = reconstruction_score
             best_score = reconstruction_score(sequence)
@@ -65,9 +83,8 @@ class BeamSearchOptimizer(BaseOptimizer):
         best_seq = sequence
         trajectory = []
 
-        # -------------------------
-        # adapter detection
-        # -------------------------
+        # Adapter domain detection boundaries
+        ## Analyze integrated tracking fields to isolate constant sub-sequences
         prefix_len = 0
         suffix_len = 0
 
@@ -97,23 +114,34 @@ class BeamSearchOptimizer(BaseOptimizer):
                         f"[BeamSearch-SCAN] adapter detection failed: {e}"
                     )
 
-        # -------------------------
-        # MAIN LOOP
-        # -------------------------
+        # Evolutionary beam search loop execution
+        ## Iterate over calculated sequence modification tracks
         for it in range(max_iterations):
 
             candidates = []
 
-            important_positions = MutationGenerator.top_k_positions(
-                importance,
-                k=self.top_k_positions
-            )
-
+            ## Scan over elements currently retained within the beam population
             for parent in beam:
 
+                ### Short-circuit check against structural constraints
                 if not self.validator.is_valid(parent):
                     continue
 
+                ### Compute live position sensitivity profiles dynamically for the current parent state
+                interpretation = interpreter.explain(
+                    model_manager=model_manager,
+                    sequence=parent,
+                    model_type=model_type
+                )
+                importance = interpretation.importance_scores
+
+                ### Extract highly reactive sequence coordinates based on updated importance maps
+                important_positions = MutationGenerator.top_k_positions(
+                    importance,
+                    k=self.top_k_positions
+                )
+
+                ### Sweep point mutations across optimal coordinate targets
                 for pos in important_positions:
 
                     candidates.extend(
@@ -127,18 +155,21 @@ class BeamSearchOptimizer(BaseOptimizer):
                         )
                     )
 
+            ## Pool verification and empty set monitoring
             if not candidates:
                 logger.warning(
                     f"[BeamSearch-SCAN] STOP iter={it} | no candidates"
                 )
                 break
 
+            ## Sort candidates population to partition the next tracking iteration space
             candidates.sort(reverse=True, key=lambda x: x[0])
 
             beam = [c[1] for c in candidates[:self.beam_width]]
 
             current_best_score, current_best_seq = candidates[0]
 
+            ## Update global historical peak configurations
             if current_best_score > best_score:
                 best_score = current_best_score
                 best_seq = current_best_seq
@@ -150,16 +181,16 @@ class BeamSearchOptimizer(BaseOptimizer):
             trajectory.append({
                 "iteration": it,
                 "score": float(best_score),
-                "sequence": best_seq
+                "sequence": best_seq,
+                "interpreter_weights": importance
             })
 
             logger.info(
                 f"[BeamSearch-SCAN] iter={it} | best_score={best_score:.5f}"
             )
 
-        # -------------------------
-        # OUTPUT
-        # -------------------------
+        # Output payload compilation
+        ## Package optimal metrics and tracking history maps
         result = {
             "best_sequence": best_seq,
             "trajectory": trajectory
@@ -169,6 +200,7 @@ class BeamSearchOptimizer(BaseOptimizer):
             predicted = score(best_seq)
             result["predicted_activity"] = predicted
             result["reconstruction_error"] = abs(predicted - target_expression)
+            
 
             logger.info(
                 f"[BeamSearch-SCAN] finished reconstruction | "

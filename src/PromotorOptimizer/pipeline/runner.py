@@ -8,7 +8,7 @@ from typing import Literal
 from ..models.model_manager import ModelManager
 from ..models.registry import ModelRegistry
 from ..optimizers.registry import OptimizerRegistry
-from ..interpretation.registry import InterpreterRegistry
+from ..interpreters.registry import InterpreterRegistry
 
 from ..core.wrapper import SequencePredictorModelWrapper
 from .configs import PipelineConfig
