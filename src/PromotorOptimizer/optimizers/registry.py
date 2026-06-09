@@ -1,6 +1,7 @@
 # optimizers/registry.py
 
 from .beam_search import BeamSearchOptimizer
+from .simulated_annealing import SimulatedAnnealingOptimizer # Add import line
 
 
 class OptimizerRegistry:
@@ -15,6 +16,8 @@ class OptimizerRegistry:
                 registry.append(
                     BeamSearchOptimizer(validation_config)
                 )
+            elif name == "simulated_annealing": # Add mapping branch
+                registry.append(SimulatedAnnealingOptimizer(validation_config))
             else:
                 raise ValueError(f"Unknown optimizer {name}")
 
