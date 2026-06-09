@@ -1,3 +1,5 @@
+# optimization/mutation_generator.py
+
 import random
 import numpy as np
 
@@ -135,3 +137,8 @@ class MutationGenerator:
         )
 
         return seq
+    
+    @staticmethod
+    def top_k_positions(importance_scores, k=20):
+        scores = importance_scores.sum(dim=1).detach().cpu().numpy()
+        return scores.argsort()[::-1][:k]

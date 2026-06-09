@@ -1,4 +1,3 @@
-import heapq
 import logging
 
 from .base_optimizer import BaseOptimizer
@@ -14,12 +13,12 @@ class BeamSearchOptimizer(BaseOptimizer):
         self,
         validation_config,
         beam_width=30,
-        candidates_per_parent=10,
-        iterations=50,
+        top_k_positions=40,
+        iterations=1,
     ):
         self.validator = SequenceValidator(validation_config)
         self.beam_width = beam_width
-        self.candidates_per_parent = candidates_per_parent
+        self.top_k_positions = top_k_positions
         self.iterations = iterations
 
     def optimize(
@@ -31,97 +30,107 @@ class BeamSearchOptimizer(BaseOptimizer):
     ):
 
         method = config.get("method", "optimization")
-
         mutation_budget = config.get("mutation_budget", None)
         target_expression = config.get("target_expression", None)
 
         importance = interpretation.importance_scores
 
+        logger.info(
+            f"[BeamSearch-SCAN] start | method={method} | "
+            f"beam_width={self.beam_width} | top_k={self.top_k_positions}"
+        )
+
         # -------------------------
-        # scoring
+        # scoring functions
         # -------------------------
         def score(seq):
-            result = model_manager.predict_sequences([seq])
-            return sum(result[seq].values()) / len(result[seq])
+            result = model_manager.predict_sequences([seq])[seq]
+            return sum(result.values()) / len(result)
 
         def reconstruction_score(seq):
-            return -abs(score(seq) - target_expression)
-
-        # -------------------------
-        # init
-        # -------------------------
-        beam = [sequence]
-        best_seq = sequence
+            # return -abs(score(seq) - target_expression)
+            result = model_manager.predict_sequences([seq])[seq]
+            return sum(result.values()) / len(result)
 
         if method == "reconstruction":
+            candidate_score_fn = reconstruction_score
             best_score = reconstruction_score(sequence)
-            max_iterations = mutation_budget  # ✅ FIX
+            max_iterations = mutation_budget
         else:
+            candidate_score_fn = score
             best_score = score(sequence)
             max_iterations = self.iterations
 
+        beam = [sequence]
+        best_seq = sequence
         trajectory = []
 
-        print(f"[BeamSearch] mode={method} iterations={max_iterations}")
-
-
         # -------------------------
-        # fix cut adapters from mutated sequence: obtain prefixes and sufixes from loader 
-        # Obtain prefix and suffix for `DNADatasetNoAdapters` loaders 
+        # adapter detection
         # -------------------------
-
-        # Extract adapter coordinate offsets from the active model registry metadata
-        ## Identify if the underlying pipeline used adapter trimming dataset representation
         prefix_len = 0
         suffix_len = 0
-        
-        for model_name, model_meta in model_manager.get_models().items():
+
+        for model_meta in model_manager.get_models().values():
             dataset_class = model_meta.get("dataset_class")
+
             if dataset_class and dataset_class.__name__ == "DNADatasetNoAdapters":
                 try:
-                    ### Instantiate configuration template to extract runtime adapter calculation rules
-                    input_file = config.get("input_path", "data/reconstruction_input.tsv")
+                    input_file = config.get(
+                        "input_path",
+                        "data/reconstruction_input.tsv"
+                    )
+
                     temp_dataset = dataset_class(input_file)
+
                     prefix_len = getattr(temp_dataset, "prefix_len", 0)
                     suffix_len = getattr(temp_dataset, "suffix_len", 0)
+
+                    logger.info(
+                        f"[BeamSearch-SCAN] adapter detected | "
+                        f"prefix_len={prefix_len}, suffix_len={suffix_len}"
+                    )
                     break
-                except Exception:
-                    ### Fallback to default index layout if metadata file accessibility fails
-                    pass
+
+                except Exception as e:
+                    logger.warning(
+                        f"[BeamSearch-SCAN] adapter detection failed: {e}"
+                    )
 
         # -------------------------
-        # main loop
+        # MAIN LOOP
         # -------------------------
         for it in range(max_iterations):
 
             candidates = []
+
+            important_positions = MutationGenerator.top_k_positions(
+                importance,
+                k=self.top_k_positions
+            )
 
             for parent in beam:
 
                 if not self.validator.is_valid(parent):
                     continue
 
-                for _ in range(self.candidates_per_parent):
+                for pos in important_positions:
 
-                    # IMPORTANT: keep small mutation step
-                    child = MutationGenerator.hybrid_mutation(
-                        parent,
-                        importance,
-                        n_mutations=1,
-                        lambda_weight=0.8,
-                        # fix cut adapters from mutated sequence: pass prefix and suffix for parameters
-                        prefix_len=prefix_len,
-                        suffix_len=suffix_len
+                    candidates.extend(
+                        self._scan_position(
+                            parent,
+                            int(pos),
+                            model_manager,
+                            candidate_score_fn,
+                            prefix_len=prefix_len,
+                            suffix_len=suffix_len
+                        )
                     )
 
-                    if not self.validator.is_valid(child):
-                        continue
-
-                    s = reconstruction_score(child) if method == "reconstruction" else score(child)
-                    candidates.append((s, child))
-
             if not candidates:
-                print(f"[BeamSearch] STOP iter={it} (no valid candidates)")
+                logger.warning(
+                    f"[BeamSearch-SCAN] STOP iter={it} | no candidates"
+                )
                 break
 
             candidates.sort(reverse=True, key=lambda x: x[0])
@@ -134,16 +143,22 @@ class BeamSearchOptimizer(BaseOptimizer):
                 best_score = current_best_score
                 best_seq = current_best_seq
 
+                logger.info(
+                    f"[BeamSearch-SCAN] NEW BEST | iter={it} | score={best_score:.5f}"
+                )
+
             trajectory.append({
                 "iteration": it,
                 "score": float(best_score),
                 "sequence": best_seq
             })
 
-            print(f"[BeamSearch] iter={it} best={best_score:.5f}")
+            logger.info(
+                f"[BeamSearch-SCAN] iter={it} | best_score={best_score:.5f}"
+            )
 
         # -------------------------
-        # output
+        # OUTPUT
         # -------------------------
         result = {
             "best_sequence": best_seq,
@@ -154,7 +169,60 @@ class BeamSearchOptimizer(BaseOptimizer):
             predicted = score(best_seq)
             result["predicted_activity"] = predicted
             result["reconstruction_error"] = abs(predicted - target_expression)
+
+            logger.info(
+                f"[BeamSearch-SCAN] finished reconstruction | "
+                f"pred={predicted:.5f} | error={result['reconstruction_error']:.5f}"
+            )
         else:
             result["best_score"] = best_score
 
+            logger.info(
+                f"[BeamSearch-SCAN] finished optimization | "
+                f"best_score={best_score:.5f}"
+            )
+
         return result
+
+    # -------------------------
+    # SCAN OPERATOR
+    # -------------------------
+    def _scan_position(
+        self,
+        sequence,
+        position,
+        model_manager,
+        score_fn,
+        prefix_len: int = 0,
+        suffix_len: int = 0
+    ):
+
+        BASES = ["A", "C", "G", "T"]
+
+        # adapter protection
+        if position < prefix_len:
+            return []
+
+        if suffix_len > 0 and position >= len(sequence) - suffix_len:
+            return []
+
+        current = sequence[position]
+        candidates = []
+
+        for base in BASES:
+
+            if base == current:
+                continue
+
+            mutated = list(sequence)
+            mutated[position] = base
+            mutated = "".join(mutated)
+
+            if not self.validator.is_valid(mutated):
+                continue
+
+            fitness = score_fn(mutated)
+
+            candidates.append((fitness, mutated))
+
+        return candidates
