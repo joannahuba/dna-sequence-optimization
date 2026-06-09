@@ -409,6 +409,11 @@ class GenomicModelZeroAdjusted(nn.Module):
             return (out_active_fwd + out_active_rev) / 2, (out_ratio_fwd + out_ratio_rev) / 2
 
     def basic_forward(self, x):   
+
+        #TODO Bugfix: change dimension to be compatible with Joanna models:
+        if x.dim() == 3 and x.shape[2] == 4:
+            x = x.permute(0, 2, 1)
+
         x = self.conv_block(x)
         x = self.fc_shared(x)
         

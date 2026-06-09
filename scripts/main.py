@@ -1,8 +1,8 @@
 # main.py
 
 import argparse
-from src.PromotorOptimizer.pipeline.configs import PipelineConfig
-from src.PromotorOptimizer.pipeline.runner import PipelineRunner
+from PromotorOptimizer.pipeline.configs import PipelineConfig
+from PromotorOptimizer.pipeline.runner import PipelineRunner
 
 
 def parse_args():

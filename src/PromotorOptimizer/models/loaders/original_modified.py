@@ -1,10 +1,10 @@
 # models/loaders/zero_loader.py
 
 import torch
-from ..architectures.genomic_model_zero import GenomicModelZeroAdjusted 
+from ..architectures.genomic_model_zero import GenomicModelZeroAdjusted
 
 
-def load_model_zero(checkpoint_path: str, device):
+def load_original_modified(checkpoint_path: str, device):
 
     model = GenomicModelZeroAdjusted()
 
