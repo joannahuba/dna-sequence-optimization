@@ -82,7 +82,7 @@ class BeamSearchOptimizer(BaseOptimizer):
 
             important_positions = MutationGenerator.top_k_positions(
                 importance,
-                k=15
+                k=30
             )
 
             for parent in beam:
@@ -206,42 +206,3 @@ class BeamSearchOptimizer(BaseOptimizer):
             )
 
         return candidates
-    
-    # def _scan_position(
-    #     self,
-    #     sequence,
-    #     position,
-    #     model_manager,
-    #     score_fn
-    # ):
-
-    #     BASES = ["A", "C", "G", "T"]
-    #     current = sequence[position]
-
-    #     candidates = []
-
-    #     for base in BASES:
-
-    #         if base == current:
-    #             continue
-
-    #         mutated = list(sequence)
-    #         mutated[position] = base
-    #         mutated = "".join(mutated)
-
-    #         if not self.validator.is_valid(mutated):
-    #             continue
-
-    #         fitness = score_fn(mutated)
-
-    #         candidates.append(
-    #             (
-    #                 fitness,
-    #                 mutated,
-    #                 position,
-    #                 current,
-    #                 base
-    #             )
-    #         )
-
-    #     return candidates
