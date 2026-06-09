@@ -3,36 +3,109 @@
 import torch
 from .base import BaseInterpreter
 
+import torch
+
+from .base import BaseInterpreter
+from ..core.types import InterpretationResult
+from ..utils.preprocessing import encode_one
+
+
+BASES = ["A", "C", "G", "T"]
+
 
 class InSilicoMutagenesis(BaseInterpreter):
-    """
-    For each position:
-        - mutate
-        - measure delta in output
-    """
 
-    def explain(self, model, sequence_tensor: torch.Tensor) -> torch.Tensor:
+    def explain(
+        self,
+        model_manager,
+        sequence,
+        model_type="ensemble"
+    ):
 
-        model.eval()
+        device = model_manager.get_device()
 
-        with torch.no_grad():
+        models = model_manager.get_models()
 
-            _, base_ratio = model(sequence_tensor)
-            base_score = base_ratio.mean(dim=-1)
+        seq_len = len(sequence)
 
-            seq_len = sequence_tensor.shape[-1]
-            importance = torch.zeros(seq_len)
+        importance_maps = []
 
-            for i in range(seq_len):
+        model_scores = {}
 
-                mutated = sequence_tensor.clone()
+        for name, meta in models.items():
 
-                # simple mutation: zero-out position (placeholder strategy)
-                mutated[..., i] = 0.0
+            model = meta["model"]
 
-                _, ratio = model(mutated)
-                score = ratio.mean(dim=-1)
+            base_tensor = torch.tensor(
+                encode_one(sequence),
+                dtype=torch.float32,
+                device=device
+            ).unsqueeze(0)
 
-                importance[i] = torch.abs(base_score - score)
+            with torch.no_grad():
 
-        return importance.detach()
+                _, ratio = model(base_tensor)
+
+                base_score = ratio.mean().item()
+
+            model_scores[name] = base_score
+
+            importance = torch.zeros(
+                seq_len,
+                4,
+                device=device
+            )
+
+            for pos in range(seq_len):
+
+                current_base = sequence[pos]
+
+                for base_idx, new_base in enumerate(BASES):
+
+                    if new_base == current_base:
+                        continue
+
+                    mutated = list(sequence)
+
+                    mutated[pos] = new_base
+
+                    mutated = "".join(mutated)
+
+                    x = torch.tensor(
+                        encode_one(mutated),
+                        dtype=torch.float32,
+                        device=device
+                    ).unsqueeze(0)
+
+                    with torch.no_grad():
+
+                        _, ratio = model(x)
+
+                        score = ratio.mean().item()
+
+                    importance[pos, base_idx] = abs(
+                        score - base_score
+                    )
+
+            importance_maps.append(
+                importance
+            )
+
+        importance_maps = torch.stack(
+            importance_maps
+        )
+
+        if model_type == "ensemble":
+            importance = importance_maps.mean(
+                dim=0
+            )
+        else:
+            importance = importance_maps[0]
+
+        return InterpretationResult(
+            method_name="Mutagenesis",
+            importance_scores=importance.cpu(),
+            sequence=sequence,
+            model_scores=model_scores,
+            metadata={}
+        )

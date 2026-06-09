@@ -1,4 +1,3 @@
-import heapq
 import logging
 
 from .base_optimizer import BaseOptimizer
@@ -22,6 +21,9 @@ class BeamSearchOptimizer(BaseOptimizer):
         self.candidates_per_parent = candidates_per_parent
         self.iterations = iterations
 
+    # -------------------------
+    # MAIN OPTIMIZATION
+    # -------------------------
     def optimize(
         self,
         sequence,
@@ -31,18 +33,17 @@ class BeamSearchOptimizer(BaseOptimizer):
     ):
 
         method = config.get("method", "optimization")
-
         mutation_budget = config.get("mutation_budget", None)
         target_expression = config.get("target_expression", None)
 
         importance = interpretation.importance_scores
 
         # -------------------------
-        # scoring
+        # unified scoring (IMPORTANT FIX)
         # -------------------------
         def score(seq):
-            result = model_manager.predict_sequences([seq])
-            return sum(result[seq].values()) / len(result[seq])
+            result = model_manager.predict_sequences([seq])[seq]
+            return sum(result.values()) / len(result)
 
         def reconstruction_score(seq):
             return -abs(score(seq) - target_expression)
@@ -55,7 +56,7 @@ class BeamSearchOptimizer(BaseOptimizer):
 
         if method == "reconstruction":
             best_score = reconstruction_score(sequence)
-            max_iterations = mutation_budget  # ✅ FIX
+            max_iterations = mutation_budget
         else:
             best_score = score(sequence)
             max_iterations = self.iterations
@@ -65,40 +66,57 @@ class BeamSearchOptimizer(BaseOptimizer):
         print(f"[BeamSearch] mode={method} iterations={max_iterations}")
 
         # -------------------------
-        # main loop
+        # scoring mode
+        # -------------------------
+        if method == "reconstruction":
+            candidate_score_fn = reconstruction_score
+        else:
+            candidate_score_fn = score
+
+        # -------------------------
+        # MAIN LOOP
         # -------------------------
         for it in range(max_iterations):
 
             candidates = []
+
+            important_positions = MutationGenerator.top_k_positions(
+                importance,
+                k=15
+            )
 
             for parent in beam:
 
                 if not self.validator.is_valid(parent):
                     continue
 
-                for _ in range(self.candidates_per_parent):
+                for pos in important_positions:
 
-                    # IMPORTANT: keep small mutation step
-                    child = MutationGenerator.hybrid_mutation(
-                        parent,
-                        importance,
-                        n_mutations=1,
-                        lambda_weight=0.8
+                    candidates.extend(
+                        self._scan_position(
+                            parent,
+                            int(pos),
+                            model_manager,
+                            candidate_score_fn
+                        )
                     )
 
-                    if not self.validator.is_valid(child):
-                        continue
-
-                    s = reconstruction_score(child) if method == "reconstruction" else score(child)
-                    candidates.append((s, child))
-
             if not candidates:
-                print(f"[BeamSearch] STOP iter={it} (no valid candidates)")
+                print(
+                    f"[BeamSearch] STOP iter={it} "
+                    "(no valid candidates)"
+                )
                 break
 
-            candidates.sort(reverse=True, key=lambda x: x[0])
+            candidates.sort(
+                reverse=True,
+                key=lambda x: x[0]
+            )
 
-            beam = [c[1] for c in candidates[:self.beam_width]]
+            beam = [
+                c[1]
+                for c in candidates[:self.beam_width]
+            ]
 
             current_best_score, current_best_seq = candidates[0]
 
@@ -112,10 +130,29 @@ class BeamSearchOptimizer(BaseOptimizer):
                 "sequence": best_seq
             })
 
-            print(f"[BeamSearch] iter={it} best={best_score:.5f}")
+            if method == "reconstruction":
+
+                predicted = score(best_seq)
+                error = abs(
+                    predicted - target_expression
+                )
+
+                print(
+                    f"[BeamSearch] iter={it} "
+                    f"pred={predicted:.4f} "
+                    f"target={target_expression:.4f} "
+                    f"error={error:.4f}"
+                )
+
+            else:
+
+                print(
+                    f"[BeamSearch] iter={it} "
+                    f"best={best_score:.5f}"
+                )
 
         # -------------------------
-        # output
+        # OUTPUT
         # -------------------------
         result = {
             "best_sequence": best_seq,
@@ -130,3 +167,81 @@ class BeamSearchOptimizer(BaseOptimizer):
             result["best_score"] = best_score
 
         return result
+
+    # -------------------------
+    # POSITION SCAN
+    # -------------------------
+    def _scan_position(
+        self,
+        sequence,
+        position,
+        model_manager,
+        score_fn
+    ):
+
+        BASES = ["A", "C", "G", "T"]
+        current = sequence[position]
+
+        candidates = []
+
+        for base in BASES:
+
+            if base == current:
+                continue
+
+            mutated = list(sequence)
+            mutated[position] = base
+            mutated = "".join(mutated)
+
+            if not self.validator.is_valid(mutated):
+                continue
+
+            fitness = score_fn(mutated)
+
+            candidates.append(
+                (
+                    fitness,
+                    mutated
+                )
+            )
+
+        return candidates
+    
+    # def _scan_position(
+    #     self,
+    #     sequence,
+    #     position,
+    #     model_manager,
+    #     score_fn
+    # ):
+
+    #     BASES = ["A", "C", "G", "T"]
+    #     current = sequence[position]
+
+    #     candidates = []
+
+    #     for base in BASES:
+
+    #         if base == current:
+    #             continue
+
+    #         mutated = list(sequence)
+    #         mutated[position] = base
+    #         mutated = "".join(mutated)
+
+    #         if not self.validator.is_valid(mutated):
+    #             continue
+
+    #         fitness = score_fn(mutated)
+
+    #         candidates.append(
+    #             (
+    #                 fitness,
+    #                 mutated,
+    #                 position,
+    #                 current,
+    #                 base
+    #             )
+    #         )
+
+    #     return candidates
