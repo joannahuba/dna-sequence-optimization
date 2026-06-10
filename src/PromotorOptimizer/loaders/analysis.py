@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 
+import torch
 import ast
 from typing import Dict, Any
 
@@ -61,7 +62,7 @@ def parse_folder(folder_path):
     return processed
 
 import re
-import torch
+
 
 def extract_importance_tensor(text: str):
     match = re.search(r"importance_scores=tensor\((.*)\),\s*sequence=", text, re.S)
