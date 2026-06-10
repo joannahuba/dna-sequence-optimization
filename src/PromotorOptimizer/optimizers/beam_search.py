@@ -7,7 +7,6 @@ from .validator import SequenceValidator
 
 logger = logging.getLogger(__name__)
 
-
 class BeamSearchOptimizer(BaseOptimizer):
 
     def __init__(
@@ -96,6 +95,7 @@ class BeamSearchOptimizer(BaseOptimizer):
 
         # Master evolutionary search loop
         for it in range(max_iterations):
+            logger.info(f"[BeamSearch-SCAN] Iteration {it}/{max_iterations} started | Active Beam Size = {len(beam)}")
             candidates = []
             active_sequences = [node[1] for node in beam]
 
@@ -157,6 +157,7 @@ class BeamSearchOptimizer(BaseOptimizer):
                         parent_lineage_count += 1
 
             if not candidates:
+                logger.warning(f"[BeamSearch-SCAN] Loop broken at iter {it} | Reason: Candidate pool is empty (all variants rejected by validator constraints)")
                 break
 
             # Selection and deduplication phase

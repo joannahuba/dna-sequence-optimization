@@ -8,6 +8,8 @@ from .base_optimizer import BaseOptimizer
 from .mutation_generator import MutationGenerator
 from .validator import SequenceValidator
 
+import logging
+logger = logging.getLogger(__name__)
 
 class StochasticBeamSearchMetropolis(BaseOptimizer):
     """
@@ -94,6 +96,10 @@ class StochasticBeamSearchMetropolis(BaseOptimizer):
 
         # Main optimization iteration loop
         for it in range(iterations):
+            logger.info(
+                f"[StochasticBeam-MH] Iteration {it + 1}/{iterations} started | "
+                f"Current Best Fitness Score = {best_score:.5f} | Temperature = {temperature:.4f}"
+            )
             candidates = []
             active_sequences = [node[1] for node in beam]
 
@@ -115,7 +121,6 @@ class StochasticBeamSearchMetropolis(BaseOptimizer):
 
                 # TODO REMARK - it should be moved to parameters to be sufficient 
                 # Determine correct reduction flag based on interpreter instance type
-                reduction_mode = "max" if interpreter.__class__.__name__ == "InSilicoMutagenesis" else "sum"
 
                 
                 # redundant 
@@ -128,7 +133,7 @@ class StochasticBeamSearchMetropolis(BaseOptimizer):
                 for _ in range(self.candidates_per_parent):
                     child = MutationGenerator.hybrid_mutation(
                         parent_seq, importance_scores=importance_tensor, n_mutations=1,
-                        prefix_len=prefix_len, suffix_len=suffix_len, reduction_mode=reduction_mode
+                        prefix_len=prefix_len, suffix_len=suffix_len
                     )
                     
                     if not self.validator.is_valid(child):
@@ -140,7 +145,13 @@ class StochasticBeamSearchMetropolis(BaseOptimizer):
                     changed_idx = [i for i in range(len(parent_seq)) if parent_seq[i] != child[i]]
                     new_mutations = mutated_positions | set(changed_idx)
 
-                    if delta > 0 or random.random() < math.exp(delta / temperature):
+                    with np.errstate(all='ignore'):
+                        try:
+                            metropolis_threshold = math.exp(delta / temperature)
+                        except OverflowError:
+                            metropolis_threshold = 1.0 if delta > 0 else 0.0
+
+                    if delta > 0 or random.random() < metropolis_threshold:
                         candidates.append((child_score, child, new_mutations))
                     else:
                         candidates.append((parent_score, parent_seq, mutated_positions))

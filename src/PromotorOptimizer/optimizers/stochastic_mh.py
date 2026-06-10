@@ -7,6 +7,8 @@ from .base_optimizer import BaseOptimizer
 from .mutation_generator import MutationGenerator
 from .validator import SequenceValidator
 
+import logging
+logger = logging.getLogger(__name__)
 
 class SimulatedAnnealingOptimizer(BaseOptimizer):
     """
@@ -61,7 +63,7 @@ class SimulatedAnnealingOptimizer(BaseOptimizer):
         """
         # Parse runtime parameters
         ## Extract configuration modes and bounds
-        hod = config.get("method", "optimization")
+        method = config.get("method", "optimization")
         mutation_budget = config.get("mutation_budget", None)
         target_expression = config.get("target_expression", None)
         iterations = config.get("iterations", 100)
@@ -101,6 +103,8 @@ class SimulatedAnnealingOptimizer(BaseOptimizer):
                 
         # Core optimization loop execution
         for it in range(iterations):
+            logger.info(f"[StochasticMH-SCAN] Iteration {it}/{len(range(iterations))} started ")
+
             interpretation = interpreter.explain(model_manager=model_manager, sequence=current_seq, model_type=model_type)
             raw_importance = interpretation.importance_scores
             importance_tensor = raw_importance.clone() if hasattr(raw_importance, "clone") else torch.tensor(raw_importance)

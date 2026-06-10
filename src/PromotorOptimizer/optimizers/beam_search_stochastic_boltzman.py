@@ -8,6 +8,9 @@ from .base_optimizer import BaseOptimizer
 from .mutation_generator import MutationGenerator
 from .validator import SequenceValidator
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 class StochasticBeamSearchBoltzmann(BaseOptimizer):
     """
@@ -98,6 +101,10 @@ class StochasticBeamSearchBoltzmann(BaseOptimizer):
 
         # Main optimization iteration loop
         for it in range(iterations):
+            logger.info(
+                f"[StochasticBeam-Boltzmann] Iteration {it + 1}/{iterations} started | "
+                f"Current Best Fitness Score = {best_score:.5f} | Temperature = {temperature:.4f}"
+            )
             candidates = []
             seen_seqs = set()
             active_sequences = [node[1] for node in beam]
@@ -119,7 +126,6 @@ class StochasticBeamSearchBoltzmann(BaseOptimizer):
 
                 # TODO REMARK - it should be moved to parameters to be sufficient 
                 # Determine correct reduction flag based on interpreter instance type
-                reduction_mode = "max" if interpreter.__class__.__name__ == "InSilicoMutagenesis" else "sum"
 
                 # redundant 
                 # # Conditional reduction metric assignment
@@ -131,7 +137,7 @@ class StochasticBeamSearchBoltzmann(BaseOptimizer):
                 for _ in range(self.candidates_per_parent):
                     child = MutationGenerator.hybrid_mutation(
                         parent_seq, importance_scores=importance_tensor, n_mutations=1,
-                        prefix_len=prefix_len, suffix_len=suffix_len, reduction_mode=reduction_mode
+                        prefix_len=prefix_len, suffix_len=suffix_len
                     )
                     
                     if child in seen_seqs or not self.validator.is_valid(child):
@@ -161,7 +167,7 @@ class StochasticBeamSearchBoltzmann(BaseOptimizer):
             max_score = np.max(raw_scores)
             
             ### Compute Boltzmann weights adjusted by current system temperature
-            with np.errstate(divide='ignore', overflow='ignore'):
+            with np.errstate(all='ignore'):
                 exp_weights = np.exp((raw_scores - max_score) / temperature)
                 
             sum_exp = np.sum(exp_weights)

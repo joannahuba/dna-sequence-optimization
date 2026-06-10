@@ -1,5 +1,6 @@
 # interpretation/saliency.py
 import torch
+import numpy as np
 from .base import BaseInterpreter
 from ..core.types import InterpretationResult
 from ..utils.preprocessing import encode_one
@@ -32,7 +33,7 @@ class SaliencyInterpreter(BaseInterpreter):
 
         # Vectorized input encoding
         ## Stack all encoded sequences into a single dense matrix component tensor
-        encoded_list = [encode_one(seq) for seq in sequences]
+        encoded_list = np.array([encode_one(seq) for seq in sequences])
         x = torch.tensor(encoded_list, dtype=torch.float32, device=device) # Shape: (B, L, 4)
 
         per_model_maps = []
@@ -40,7 +41,8 @@ class SaliencyInterpreter(BaseInterpreter):
 
         for name, meta in models.items():
             model = meta["model"]
-            model.to(device)
+            #TODO check if it was not instantiated earlier
+            # model.to(device)
             model.eval()
 
             # Enable gradient capture across the entire spatial sequence batch
@@ -57,10 +59,18 @@ class SaliencyInterpreter(BaseInterpreter):
             saliency = grad.abs() # Shape: (B, L, 4)
             per_model_maps.append(saliency)
 
+            # Dimensionality-agnostic evaluation score parsing
             with torch.no_grad():
                 _, out_ratio = model(x)
                 for b_idx in range(batch_size):
-                    model_scores[name].append(float(out_ratio[b_idx].mean().cpu()))
+                    ### Safely extract scalar metric values across varying tensor shapes
+                    if out_ratio.ndim == 0:
+                        score_val = float(out_ratio.item())
+                    elif out_ratio.ndim == 1:
+                        score_val = float(out_ratio[b_idx].item())
+                    else:
+                        score_val = float(out_ratio[b_idx].mean().item())
+                    model_scores[name].append(score_val)
 
         per_model_maps = torch.stack(per_model_maps) # Shape: (M, B, L, 4)
 

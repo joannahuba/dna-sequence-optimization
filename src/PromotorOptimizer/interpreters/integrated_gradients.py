@@ -51,7 +51,7 @@ class IntegratedGradientsInterpreter(BaseInterpreter):
         models = model_manager.get_models()
         batch_size = len(sequences)
 
-        encoded_list = [encode_one(seq) for seq in sequences]
+        encoded_list = np.array([encode_one(seq) for seq in sequences])
         x = torch.tensor(encoded_list, dtype=torch.float32, device=device) # (B, L, 4)
 
         per_model_maps = []
@@ -60,6 +60,8 @@ class IntegratedGradientsInterpreter(BaseInterpreter):
         for name, meta in models.items():
             model = meta["model"]
             model.eval()
+
+            logger.info(f"[IG] model={name} processing started")
 
             baseline = self._generate_gc_matched_baseline_batch(sequences, device) # (B, L, 4)
             total_gradients = torch.zeros_like(x)
@@ -76,18 +78,37 @@ class IntegratedGradientsInterpreter(BaseInterpreter):
 
                 total_gradients += interp.grad
 
+                if i % 10 == 0 or i == self.steps - 1:
+                    logger.info(f"[IG] model={name} step={i}/{self.steps}")
+
             avg_grad = total_gradients / self.steps
             integrated = (x - baseline) * avg_grad
             integrated = integrated.abs() # Shape: (B, L, 4)
             per_model_maps.append(integrated)
 
+
+
+            # Dimensionality-agnostic evaluation score parsing
             with torch.no_grad():
                 _, out_ratio = model(x)
                 for b_idx in range(batch_size):
-                    model_scores[name].append(float(out_ratio[b_idx].mean().cpu()))
+                    ### Safely extract scalar metric values across varying tensor shapes
+                    if out_ratio.ndim == 0:
+                        score_val = float(out_ratio.item())
+                    elif out_ratio.ndim == 1:
+                        score_val = float(out_ratio[b_idx].item())
+                    else:
+                        score_val = float(out_ratio[b_idx].mean().item())
+                    
+                    model_scores[name].append(score_val)
+                    
+                    #### Print individual sample score from inside the processed batch tracking array
+                    logger.info(f"[IG] model={name} sample={b_idx} score={score_val:.6f}")
 
         per_model_maps = torch.stack(per_model_maps) # (M, B, L, 4)
         importance_batch = per_model_maps.mean(dim=0) if model_type == "ensemble" else per_model_maps[0]
+
+        logger.info("[IG] Finished")
 
         results = []
         for b_idx in range(batch_size):

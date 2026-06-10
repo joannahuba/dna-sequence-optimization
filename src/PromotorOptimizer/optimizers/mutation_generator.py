@@ -37,7 +37,7 @@ class MutationGenerator:
         return seq
 
     @staticmethod
-    def guided_mutation(sequence, importance_scores, n_mutations=1, prefix_len=0, suffix_len=0, reduction_mode="sum"):
+    def guided_mutation(sequence, importance_scores, n_mutations=1, prefix_len=0, suffix_len=0):
 
         # importance_scores: (L, 4)
         probs = importance_scores.numpy().copy()
@@ -66,20 +66,17 @@ class MutationGenerator:
         core_probs = np.abs(core_probs)
         core_probs = core_probs + 1e-8
 
-        # Dimensionality reduction for position sampling
-        ## Select strategy based on interpretation model type
-        if reduction_mode == "max":
-            pos_importance = core_probs.max(axis=1)
-        else:
-            pos_importance = np.abs(core_probs).sum(axis=1)
-
-        post_importance_sum = pos_importance.sum()
-        if pos_importance > 0:
-            core_probs = pos_importance / post_importance_sum
+        total_sum = core_probs.sum()
+        if total_sum > 0:
+            core_probs = core_probs / total_sum
         ## Handler: rarely but it can happen that we will obtain 0 from sum (to small representation)
         else:
             core_probs = np.ones_like(core_probs) / core_probs.size
         
+        # fix cut adapters from mutated sequence: we doing it later)
+        # DEPRECATED
+        # seq = sequence
+
         ## Select positions and execute localized mutations within the core region
         position_probabilities = core_probs.sum(axis=1)
         positions = np.random.choice(
@@ -119,8 +116,7 @@ class MutationGenerator:
         lambda_weight=0.7,
         # fix cut adapters from mutated sequence: get prefix and suffix for parameters
         prefix_len: int=0,
-        suffix_len: int=0,
-        reduction_mode="sum"
+        suffix_len: int=0
     ):
 
         guided_n = int(n_mutations * lambda_weight)
@@ -132,8 +128,7 @@ class MutationGenerator:
             guided_n,
             # fix cut adapters from mutated sequence: pass prefix and suffix for parameters
             prefix_len=prefix_len,
-            suffix_len=suffix_len,
-            reduction_mode=reduction_mode
+            suffix_len=suffix_len
         )
 
         seq = MutationGenerator.random_mutation(

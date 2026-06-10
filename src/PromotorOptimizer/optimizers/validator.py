@@ -154,9 +154,9 @@ class SequenceValidator:
 if __name__ == "__main__":
     # Complete parameter pipeline setup
     config = {
-        "max_homopolymer_at": 5,
-        "max_homopolymer_gc": 4,
-        "gc_percent_range": (0.4, 0.6),
+        "max_homopolymer_at": 10,
+        "max_homopolymer_gc": 7,
+        "gc_percent_range": (0.25, 0.65),
         "min_length": 230,
         "max_length": 230
     }
