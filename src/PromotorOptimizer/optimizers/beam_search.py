@@ -12,7 +12,7 @@ class BeamSearchOptimizer(BaseOptimizer):
     def __init__(
         self,
         validation_config,
-        beam_width=40,
+        beam_width=30,
         top_k_positions=40,
         iterations=50,
     ):

@@ -70,9 +70,9 @@ class DNADatasetNoAdapters(DNADataset):
         super().__init__(filepath, is_test=is_test, header=header)
         
         # Find local adapters globally 
-        self.prefix, self.suffix = find_common_adapters(self.data['sequence'])
-        self.prefix_len = len(self.prefix)
-        self.suffix_len = len(self.suffix)
+        # self.prefix, self.suffix = 15, 15
+        self.prefix_len = 15
+        self.suffix_len = 15
         
         # Print info to verify everything is correct
         print(f"--- Dataset Initialized with Adapter Trimming ---")
