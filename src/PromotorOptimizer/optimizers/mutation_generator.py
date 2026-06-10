@@ -37,7 +37,7 @@ class MutationGenerator:
         return seq
 
     @staticmethod
-    def guided_mutation(sequence, importance_scores, n_mutations=1, prefix_len=0, suffix_len=0):
+    def guided_mutation(sequence, importance_scores, n_mutations=1, prefix_len=0, suffix_len=0, reduction_mode="sum"):
 
         # importance_scores: (L, 4)
         probs = importance_scores.numpy().copy()
@@ -66,17 +66,20 @@ class MutationGenerator:
         core_probs = np.abs(core_probs)
         core_probs = core_probs + 1e-8
 
-        total_sum = core_probs.sum()
-        if total_sum > 0:
-            core_probs = core_probs / total_sum
+        # Dimensionality reduction for position sampling
+        ## Select strategy based on interpretation model type
+        if reduction_mode == "max":
+            pos_importance = core_probs.max(axis=1)
+        else:
+            pos_importance = np.abs(core_probs).sum(axis=1)
+
+        post_importance_sum = pos_importance.sum()
+        if pos_importance > 0:
+            core_probs = pos_importance / post_importance_sum
         ## Handler: rarely but it can happen that we will obtain 0 from sum (to small representation)
         else:
             core_probs = np.ones_like(core_probs) / core_probs.size
         
-        # fix cut adapters from mutated sequence: we doing it later)
-        # DEPRECATED
-        # seq = sequence
-
         ## Select positions and execute localized mutations within the core region
         position_probabilities = core_probs.sum(axis=1)
         positions = np.random.choice(
@@ -116,7 +119,8 @@ class MutationGenerator:
         lambda_weight=0.7,
         # fix cut adapters from mutated sequence: get prefix and suffix for parameters
         prefix_len: int=0,
-        suffix_len: int=0
+        suffix_len: int=0,
+        reduction_mode="sum"
     ):
 
         guided_n = int(n_mutations * lambda_weight)
@@ -128,7 +132,8 @@ class MutationGenerator:
             guided_n,
             # fix cut adapters from mutated sequence: pass prefix and suffix for parameters
             prefix_len=prefix_len,
-            suffix_len=suffix_len
+            suffix_len=suffix_len,
+            reduction_mode=reduction_mode
         )
 
         seq = MutationGenerator.random_mutation(
@@ -139,6 +144,32 @@ class MutationGenerator:
         return seq
     
     @staticmethod
-    def top_k_positions(importance_scores, k=20):
-        scores = importance_scores.sum(dim=1).detach().cpu().numpy()
+    def top_k_positions(importance_scores, k=20, reduction_mode="sum"):
+        """
+        Extracts top K most reactive sequence coordinates based on matrix reduction.
+
+        :param importance_scores: Matrix containing sensitivity attribution scores.
+        :type importance_scores: torch.Tensor or numpy.ndarray
+        :param k: Footprint size of coordinate targets to isolate. Default is 20.
+        :type k: int
+        :param reduction: Reduction method flag ('sum' for gradient maps, 'max' for ISM). Default is 'sum'.
+        :type reduction: str
+        :return: Array containing sorted coordinate indices.
+        :rtype: numpy.ndarray
+        """
+        # Handle PyTorch tensor conversion steps safely
+        ## Isolate underlying array across compute device boundaries
+        if hasattr(importance_scores, "detach"):
+            tensor = importance_scores.clone().detach().cpu()
+        else:
+            import torch
+            tensor = torch.tensor(importance_scores).cpu()
+
+        # Execute dimensionality reduction profiles
+        ## Select strategy based on interpretation model type
+        if reduction_mode == "max":
+            scores = tensor.max(dim=1)[0].numpy()
+        else:
+            scores = tensor.abs().sum(dim=1).numpy()
+
         return scores.argsort()[::-1][:k]

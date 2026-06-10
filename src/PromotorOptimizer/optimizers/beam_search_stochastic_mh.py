@@ -3,6 +3,7 @@
 import math
 import random
 import numpy as np
+import torch
 from .base_optimizer import BaseOptimizer
 from .mutation_generator import MutationGenerator
 from .validator import SequenceValidator
@@ -33,8 +34,9 @@ class StochasticBeamSearchMetropolis(BaseOptimizer):
         validation_config,
         beam_width=30,
         candidates_per_parent=10,
-        initial_temperature=5.0,
-        cooling_rate=0.95
+        # REMARK: we need high parameters, on below temperatue 8.5 nothing is changes because gradients are 0 every where
+        initial_temperature=0.8,
+        cooling_rate=0.985
     ):
         # Operational components setup
         ## Instantiate the structural biological validator interface
@@ -52,35 +54,32 @@ class StochasticBeamSearchMetropolis(BaseOptimizer):
         config
     ):
         """
-        Runs the stochastic multi-trajectory search to optimize the biological sequence.
-
-        This method dynamically re-computes position importance scores for each active 
-        parent sequence inside the beam during every iteration loop step.
-
-        :param sequence: Seed wild-type or disrupted nucleotide string.
-        :type sequence: str
-        :param model_manager: Unified evaluation engine wrapper orchestration stack.
-        :type model_manager: ModelManager
-        :param interpreter: Live implementation instance of BaseInterpreter to re-evaluate gradients.
-        :type interpreter: BaseInterpreter
-        :param config: Runtime configuration block mapping execution goals and mutation limits.
-        :type config: dict
-        :return: Execution map containing the best candidate sequence and tracking parameters.
-        :rtype: dict
+        Executes a vectorized Stochastic Beam Search using the Metropolis-Hastings criteria
+        combined with lineage-locked Tabu position masking.
         """
-        # Configuration parsing and context initialization
-        ## Extract processing directives and mutation properties
         method = config.get("method", "optimization")
         mutation_budget = config.get("mutation_budget", None)
         target_expression = config.get("target_expression", None)
         iterations = config.get("iterations", 50)
         model_type = config.get("model_type", "ensemble")
 
-        # Sequence adapter boundaries evaluation
-        ## Set up prefix and suffix tracking metrics for sequence isolation
+        def score(seq):
+            result = model_manager.predict_sequences([seq])
+            return sum(result[seq].values()) / len(result[seq])
+
+        def reconstruction_score(seq):
+            return -abs(score(seq) - target_expression)
+
+        initial_score = reconstruction_score(sequence) if method == "reconstruction" else score(sequence)
+        
+        beam = [(initial_score, sequence, set())]
+        best_seq = sequence
+        best_score = initial_score
+        temperature = self.initial_temperature
+        trajectory = []
+
         prefix_len = 0
         suffix_len = 0
-
         for model_meta in model_manager.get_models().values():
             dataset_class = model_meta.get("dataset_class")
             if dataset_class and dataset_class.__name__ == "DNADatasetNoAdapters":
@@ -90,116 +89,112 @@ class StochasticBeamSearchMetropolis(BaseOptimizer):
                     prefix_len = getattr(temp_dataset, "prefix_len", 0)
                     suffix_len = getattr(temp_dataset, "suffix_len", 0)
                     break
-                except Exception as e:
+                except Exception:
                     pass
-
-        # Define internal evaluation mechanics
-        ## Establish ensemble fitness function calculations
-        def score(seq):
-            result = model_manager.predict_sequences([seq])
-            return sum(result[seq].values()) / len(result[seq])
-
-        ## Establish error tracking for target expression matching tasks
-        def reconstruction_score(seq):
-            return -abs(score(seq) - target_expression)
-
-        # Optimization variables initialization
-        ## Seed initial parameters and active beam pools
-        initial_score = reconstruction_score(sequence) if method == "reconstruction" else score(sequence)
-        
-        # Beam pool elements store tuples matching: (fitness_score, sequence_string)
-        beam = [(initial_score, sequence)]
-        best_seq = sequence
-        best_score = initial_score
-        
-        temperature = self.initial_temperature
-        trajectory = []
 
         # Main optimization iteration loop
         for it in range(iterations):
-            ## Initialize empty candidate generation pool for current cycle
             candidates = []
-            
-            ## Generate and evaluate children for each sequence in the current beam
-            for parent_score, parent_seq in beam:
-                ### Compute live position sensitivity profiles dynamically for the current parent state
-                interpretation = interpreter.explain(
-                    model_manager=model_manager,
-                    sequence=parent_seq,
-                    model_type=model_type
-                )
-                importance = interpretation.importance_scores
+            active_sequences = [node[1] for node in beam]
+
+            # Vectorized batch attribution calculation pass
+            if hasattr(interpreter, "explain_batch"):
+                interpretations = interpreter.explain_batch(model_manager, active_sequences, model_type)
+                importance_map = {interp.sequence: interp.importance_scores for interp in interpretations}
+            else:
+                importance_map = {s: interpreter.explain(model_manager, s, model_type).importance_scores for s in active_sequences}
+
+            # Exploit and mutate step loops over lineage tracks
+            for parent_score, parent_seq, mutated_positions in beam:
+                raw_importance = importance_map[parent_seq]
+                importance_tensor = raw_importance.clone() if hasattr(raw_importance, "clone") else torch.tensor(raw_importance)
+
+                # Zero out importance entries at historically modified coordinates
+                for blocked_pos in mutated_positions:
+                    importance_tensor[blocked_pos, :] = 0.0
+
+                # TODO REMARK - it should be moved to parameters to be sufficient 
+                # Determine correct reduction flag based on interpreter instance type
+                reduction_mode = "max" if interpreter.__class__.__name__ == "InSilicoMutagenesis" else "sum"
+
                 
+                # redundant 
+                # # Apply conditional reduction logic branch
+                # if interpreter.__class__.__name__ == "InSilicoMutagenesis":
+                #     scores = importance_tensor.max(dim=1)[0].detach().cpu().numpy()
+                # else:
+                #     scores = importance_tensor.abs().sum(dim=1).detach().cpu().numpy()
+
                 for _ in range(self.candidates_per_parent):
-                    ### Generate a single-nucleotide mutation
                     child = MutationGenerator.hybrid_mutation(
-                        parent_seq,
-                        importance_scores=importance,
-                        n_mutations=1,
-                        prefix_len=prefix_len,
-                        suffix_len=suffix_len
+                        parent_seq, importance_scores=importance_tensor, n_mutations=1,
+                        prefix_len=prefix_len, suffix_len=suffix_len, reduction_mode=reduction_mode
                     )
                     
-                    ### Verify structural and biological criteria
                     if not self.validator.is_valid(child):
                         continue
                         
-                    ### Compute the ensemble fitness score for the child
                     child_score = reconstruction_score(child) if method == "reconstruction" else score(child)
-                    
-                    ### Evaluate transition using the Metropolis-Hastings criterion
                     delta = child_score - parent_score
                     
+                    changed_idx = [i for i in range(len(parent_seq)) if parent_seq[i] != child[i]]
+                    new_mutations = mutated_positions | set(changed_idx)
+
                     if delta > 0 or random.random() < math.exp(delta / temperature):
-                        candidates.append((child_score, child))
+                        candidates.append((child_score, child, new_mutations))
                     else:
-                        candidates.append((parent_score, parent_seq))
+                        candidates.append((parent_score, parent_seq, mutated_positions))
             
-            ## Handle edge case where no candidates are present
             if not candidates:
                 break
                 
-            ## Rank and filter the next generation beam pool
             candidates.sort(reverse=True, key=lambda x: x[0])
             
-            ## Unique sequence deduplication to prevent beam collapse
             unique_candidates = []
             seen_seqs = set()
-            for s, seq_str in candidates:
-                ### Filter out redundant sequence variations
+            for s, seq_str, mut_set in candidates:
                 if seq_str not in seen_seqs:
                     seen_seqs.add(seq_str)
-                    unique_candidates.append((s, seq_str))
+                    unique_candidates.append((s, seq_str, mut_set))
                     if len(unique_candidates) == self.beam_width:
                         break
                         
             beam = unique_candidates
-            
-            ## Update global historical peak configurations
-            current_best_score, current_best_seq = beam[0]
+            current_best_score, current_best_seq, _ = beam[0]
             if current_best_score > best_score:
                 best_score = current_best_score
                 best_seq = current_best_seq
                 
-            ## Log execution metrics for trajectory analysis
+            # Safely transform matrix to list architecture
+            best_importance = importance_map.get(best_seq, list(importance_map.values())[0])
+            if hasattr(best_importance, "detach"):
+                importance_log = best_importance.detach().cpu().numpy().tolist()
+            else:
+                importance_log = np.array(best_importance).tolist()
+
+            ## Compile data maps for the entire active population inside the beam
+            ### Capturing full lineage tracking states to audit ensemble behavior post-execution
+            beam_population_log = [
+                {
+                    "score": float(node_score),
+                    "sequence": node_seq,
+                    "mutated_positions": list(node_mut_set)
+                }
+                for node_score, node_seq, node_mut_set in beam
+            ]
+
+            # Log execution metrics for trajectory analysis
             trajectory.append({
                 "iteration": it,
                 "score": float(best_score),
                 "sequence": best_seq,
-                "interpreter_weights": importance,
+                "beam_population": beam_population_log,
+                "interpreter_weights": importance_log,
                 "temperature": temperature
             })
-            
-            ## Apply geometric cooling decay to system temperature
             temperature *= self.cooling_rate
 
-        # Assemble execution tracking results
-        ## Compile output dictionary coordinates
-        result = {
-            "best_sequence": best_seq,
-            "trajectory": trajectory
-        }
-
+        result = {"best_sequence": best_seq, "trajectory": trajectory}
         if method == "reconstruction":
             predicted = score(best_seq)
             result["predicted_activity"] = predicted

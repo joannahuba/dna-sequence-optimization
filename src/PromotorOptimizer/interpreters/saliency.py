@@ -6,81 +6,81 @@ from ..utils.preprocessing import encode_one
 import logging
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
-)
 
 
 class SaliencyInterpreter(BaseInterpreter):
 
-    def explain(
-        self,
-        model_manager,
-        sequence: str,
-        model_type="ensemble"
-    ):
+    def explain(self, model_manager, sequence: str, model_type="ensemble"):
+        # Zachowujemy oryginalną metodę dla kompatybilności wstecznej
+        return self.explain_batch(model_manager, [sequence], model_type)[0]
 
-        logger.info(f"[Saliency] Start | model_type={model_type} | seq_len={len(sequence)}")
+    def explain_batch(self, model_manager, sequences: list, model_type="ensemble"):
+        """
+        Computes saliency attribution maps for a batch of sequences concurrently on GPU.
 
+        :param model_manager: Unified evaluation suite manager coordination stack.
+        :param sequences: List of DNA sequence strings currently in the beam pool.
+        :type sequences: list of str
+        :param model_type: Averaging methodology flag ('ensemble' or 'single').
+        :type model_type: str
+        :return: List of InterpretationResult instances matching the input batch order.
+        :rtype: list
+        """
         device = model_manager.get_device()
         models = model_manager.get_models()
+        batch_size = len(sequences)
 
-        x = torch.tensor(
-            encode_one(sequence),
-            dtype=torch.float32,
-            device=device
-        ).unsqueeze(0)  # (1, L, 4)
+        # Vectorized input encoding
+        ## Stack all encoded sequences into a single dense matrix component tensor
+        encoded_list = [encode_one(seq) for seq in sequences]
+        x = torch.tensor(encoded_list, dtype=torch.float32, device=device) # Shape: (B, L, 4)
 
         per_model_maps = []
-        model_scores = {}
+        model_scores = {name: [] for name in models.keys()}
 
         for name, meta in models.items():
-
             model = meta["model"]
             model.to(device)
             model.eval()
 
+            # Enable gradient capture across the entire spatial sequence batch
             x_req = x.clone().detach().requires_grad_(True)
 
-            _, ratio = model(x_req)
-            score = ratio.mean()
-
-            model_scores[name] = float(score.detach().cpu())
-            logger.info(f"[Saliency] model={name} score={model_scores[name]:.6f}")
+            _, ratio = model(x_req) # Predict expression profile values
+            score = ratio.mean()   # Dynamic continuous reduction metric
 
             model.zero_grad()
             score.backward()
 
-            grad = x_req.grad  # (1, L, 4)
-
-            # IMPORTANT: keep per-base importance
-            saliency = grad.abs().squeeze(0)  # (L, 4)
-
-            logger.info(
-                f"[Saliency] model={name} grad_stats="
-                f"min={saliency.min().item():.4f} "
-                f"max={saliency.max().item():.4f}"
-            )
-
+            # Extract instantaneous derivatives across all elements parallelly
+            grad = x_req.grad # Shape: (B, L, 4)
+            saliency = grad.abs() # Shape: (B, L, 4)
             per_model_maps.append(saliency)
 
-        per_model_maps = torch.stack(per_model_maps)  # (M, L, 4)
+            with torch.no_grad():
+                _, out_ratio = model(x)
+                for b_idx in range(batch_size):
+                    model_scores[name].append(float(out_ratio[b_idx].mean().cpu()))
 
+        per_model_maps = torch.stack(per_model_maps) # Shape: (M, B, L, 4)
+
+        # Reduce gradients according to model coordination configuration
         if model_type == "ensemble":
-            importance = per_model_maps.mean(dim=0)
-            logger.info("[Saliency] Using ENSEMBLE averaging")
+            importance_batch = per_model_maps.mean(dim=0) # Shape: (B, L, 4)
         else:
-            importance = per_model_maps[0]
-            logger.info("[Saliency] Using SINGLE model mode")
+            importance_batch = per_model_maps[0]
 
-        logger.info("[Saliency] Finished")
-
-
-        return InterpretationResult(
-            method_name="Saliency",
-            importance_scores=importance.detach().cpu(),
-            sequence=sequence,
-            model_scores=model_scores,
-            metadata={}
-        )
+        # Compile and un-batch results array
+        results = []
+        for b_idx in range(batch_size):
+            single_scores = {name: model_scores[name][b_idx] for name in models.keys()}
+            results.append(
+                InterpretationResult(
+                    method_name="Saliency",
+                    importance_scores=importance_batch[b_idx].cpu(),
+                    sequence=sequences[b_idx],
+                    model_scores=single_scores,
+                    metadata={}
+                )
+            )
+        return results

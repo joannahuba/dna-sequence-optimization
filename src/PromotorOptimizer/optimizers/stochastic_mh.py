@@ -26,8 +26,8 @@ class SimulatedAnnealingOptimizer(BaseOptimizer):
     def __init__(
         self,
         validation_config,
-        initial_temperature=10.0,
-        cooling_rate=0.95
+        initial_temperature=1.2,
+        cooling_rate=0.99
     ):
         # Resource initialization
         ## Bind short-circuit structural validator
@@ -61,15 +61,32 @@ class SimulatedAnnealingOptimizer(BaseOptimizer):
         """
         # Parse runtime parameters
         ## Extract configuration modes and bounds
-        method = config.get("method", "optimization")
+        hod = config.get("method", "optimization")
         mutation_budget = config.get("mutation_budget", None)
         target_expression = config.get("target_expression", None)
         iterations = config.get("iterations", 100)
         model_type = config.get("model_type", "ensemble")
 
+        def score(seq):
+            result = model_manager.predict_sequences([seq])
+            return sum(result[seq].values()) / len(result[seq])
+
+        def reconstruction_score(seq):
+            return -abs(score(seq) - target_expression)
+
+        current_seq = sequence
+        current_score = reconstruction_score(sequence) if method == "reconstruction" else score(sequence)
+        
+        best_seq = current_seq
+        best_score = current_score
+        
+        # Simulated Annealing tracks positions using a single localization mask set
+        mutated_positions = set()
+        temperature = self.initial_temperature
+        trajectory = []
+
         prefix_len = 0
         suffix_len = 0
-
         for model_meta in model_manager.get_models().values():
             dataset_class = model_meta.get("dataset_class")
             if dataset_class and dataset_class.__name__ == "DNADatasetNoAdapters":
@@ -79,80 +96,54 @@ class SimulatedAnnealingOptimizer(BaseOptimizer):
                     prefix_len = getattr(temp_dataset, "prefix_len", 0)
                     suffix_len = getattr(temp_dataset, "suffix_len", 0)
                     break
-                except Exception as e:
+                except Exception:
                     pass
-
-        # Define localized performance evaluators
-        ## Raw prediction averaging
-        def score(seq):
-            result = model_manager.predict_sequences([seq])
-            return sum(result[seq].values()) / len(result[seq])
-
-        ## Absolute objective distance evaluation
-        def reconstruction_score(seq):
-            return -abs(score(seq) - target_expression)
-
-        # Optimization track setup
-        ## Initialize baseline states
-        current_seq = sequence
-        current_score = reconstruction_score(sequence) if method == "reconstruction" else score(sequence)
-        
-        best_seq = current_seq
-        best_score = current_score
-        
-        temperature = self.initial_temperature
-        trajectory = []
-
+                
         # Core optimization loop execution
         for it in range(iterations):
-            ## Compute live position sensitivity profiles dynamically for the current sequence state
-            interpretation = interpreter.explain(
-                model_manager=model_manager,
-                sequence=current_seq,
-                model_type=model_type
-            )
-            importance = interpretation.importance_scores
+            interpretation = interpreter.explain(model_manager=model_manager, sequence=current_seq, model_type=model_type)
+            raw_importance = interpretation.importance_scores
+            importance_tensor = raw_importance.clone() if hasattr(raw_importance, "clone") else torch.tensor(raw_importance)
 
-            ## Generate candidate via directed mutation mutations
-            ### Draw mutation step single position parameters
+            # Silencing strategy: Mask previously modified coordinates
+            for blocked_pos in mutated_positions:
+                importance_tensor[blocked_pos, :] = 0.0
+
+    
+
             candidate_seq = MutationGenerator.hybrid_mutation(
-                sequence=current_seq,
-                importance_scores=importance,
-                n_mutations=1,
-                prefix_len=prefix_len,
-                suffix_len=suffix_len
+                sequence=current_seq, importance_scores=importance_tensor, n_mutations=1,
+                prefix_len=prefix_len, suffix_len=suffix_len
             )
 
-            ## Validate structural and biological properties
             if not self.validator.is_valid(candidate_seq):
                 continue
 
-            ## Score candidate variation
-            candidate_score = (
-                reconstruction_score(candidate_seq)
-                if method == "reconstruction"
-                else score(candidate_seq)
-            )
-
-            ## Evaluate state transition
+            candidate_score = reconstruction_score(candidate_seq) if method == "reconstruction" else score(candidate_seq)
             delta = candidate_score - current_score
 
-            ### Apply Metropolis-Hastings acceptance conditions
             if delta > 0 or random.random() < math.exp(delta / temperature):
+                changed_idx = [i for i in range(len(current_seq)) if current_seq[i] != candidate_seq[i]]
+                mutated_positions |= set(changed_idx)
                 current_seq = candidate_seq
                 current_score = candidate_score
 
-                #### Keep track of global historical peak
                 if current_score > best_score:
                     best_score = current_score
                     best_seq = candidate_seq
+
+            # Cast matrix matrix array context cleanly
+            if hasattr(raw_importance, "detach"):
+                importance_log = raw_importance.detach().cpu().numpy().tolist()
+            else:
+                importance_log = np.array(raw_importance).tolist()
 
             ## Log execution state metrics
             trajectory.append({
                 "iteration": it,
                 "score": float(best_score),
                 "sequence": best_seq,
-                "interpreter_weights": importance,
+                "interpreter_weights": importance_log,
                 "temperature": temperature
             })
 
