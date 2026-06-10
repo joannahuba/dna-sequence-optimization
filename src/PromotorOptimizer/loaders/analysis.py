@@ -6,6 +6,10 @@ import numpy as np
 import pandas as pd
 
 
+import ast
+from typing import Dict, Any
+
+
 # =====================================
 # Interpretation parser
 # =====================================
@@ -52,6 +56,8 @@ def parse_folder(folder_path):
                         "trajectory": pd.DataFrame(optimizer_data["trajectory"])
                     }
 
+    
+
     return processed
 
 import re
@@ -66,3 +72,5 @@ def extract_importance_tensor(text: str):
 
     # zamiana na torch.tensor(...)
     return eval("torch.tensor(" + tensor_str + ")")
+
+
