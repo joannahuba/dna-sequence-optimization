@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # Imporujemy zaimplementowane wcześniej moduły
 ## Zakładamy, że kod z poprzednich kroków umieściłeś w pliku cross_validation_core.py
-from PromotorOptimizer.loaders.add_metrics import run_cross_validation_pipeline
+from PromotorOptimizer.loaders.add_scores import run_cross_validation_pipeline
 
 # ----------------------------------------------------------------------
 # MOCK ARCHITECTURES - Podmień te definicje na swoje rzeczywiste klasy
