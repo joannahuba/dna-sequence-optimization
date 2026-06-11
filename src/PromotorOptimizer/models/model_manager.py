@@ -75,19 +75,35 @@ class ModelManager(BaseModelManager):
     # RAW STRING PREDICTION
     # =====================================================
 
+    # =====================================================
+    # RAW STRING PREDICTION
+    # =====================================================
+
     def predict_sequences(
         self,
-        sequences: List[str]
+        sequences: List[str],
+        model_names: Optional[List[str] | str] = None
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Executes high-throughput multi-model inference by globally pre-encoding 
-        sequences and minimizing host-to-device context switches.
+        Executes high-throughput multi-model or filtered single-model inference 
+        by globally pre-encoding sequences and minimizing host-to-device context switches.
 
         :param sequences: Cleaned list of unique nucleotide strings.
         :type sequences: List[str]
+        :param model_names: Optional single model name or list of model names to filter execution.
+        :type model_names: Optional[List[str] | str]
         :return: Nested map tracking scores per sequence per model.
         :rtype: Dict[str, Dict[str, Any]]
         """
+        # Model selection and filtering logic
+        ## Resolve target execution space based on the filtering parameter
+        if model_names is None:
+            selected_models = list(self.models_dict.keys())
+        elif isinstance(model_names, str):
+            selected_models = [model_names]
+        else:
+            selected_models = model_names
+
         # Global pre-encoding execution block
         ## Encode all sequence strings to eliminate iterative python execution overhead
         logger.debug("Starting pre-encoding for sequence array of volume: %s", len(sequences))
@@ -99,9 +115,14 @@ class ModelManager(BaseModelManager):
         }
 
         # Multi-model prediction pipeline orchestration
-        ## Outer Loop: Prepare each model exactly once to prevent CUDA context switching overhead
-        for model_name, meta in self.models_dict.items():
+        ## Outer Loop: Prepare filtered models to prevent CUDA context switching overhead
+        for model_name in selected_models:
+            if model_name not in self.models_dict:
+                logger.error("Requested model key not present in registry: %s", model_name)
+                raise KeyError(f"Model {model_name} not found in models_dict.")
+
             logger.debug("Synchronizing hardware runtime environment for model: %s", model_name)
+            meta = self.models_dict[model_name]
             model = meta["model"]
             model.to(self.device)
             model.eval()
@@ -124,7 +145,7 @@ class ModelManager(BaseModelManager):
                 ### Fetch prediction arrays back to host memory space
                 ratio_np = ratio.detach().cpu().numpy()
 
-                ### Map evaluation scalars to persistent dictionary structures
+                ### Fast index mapping block
                 for idx, seq in enumerate(batch_seqs):
                     seq_output = ratio_np[idx]
                     
@@ -135,7 +156,6 @@ class ModelManager(BaseModelManager):
                         #### Preserve complete raw array mapping profiles for multi-task outputs
                         results[seq][model_name] = seq_output.tolist()
 
-        logger.debug("Completed parallel sequence validation prediction mapping successfully.")
         return results
 
     # =====================================================
