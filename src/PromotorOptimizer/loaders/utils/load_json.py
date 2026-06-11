@@ -61,7 +61,6 @@ def parse_folder(folder_path):
 
     return processed
 
-import re
 
 
 def extract_importance_tensor(text: str):
