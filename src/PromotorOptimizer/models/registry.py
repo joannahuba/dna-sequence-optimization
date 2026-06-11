@@ -30,7 +30,8 @@ class ModelRegistry:
             # MODEL ZERO
             # -------------------------
             if name in ["model_zero", "zero_test_model"]:
-
+                # TODO - add later some configurator of forward functions 
+                # REMARK: it does not work because of different forward structure
                 model = load_model_zero(
                     "data/checkpoints/zero_test_model.pth",
                     device
