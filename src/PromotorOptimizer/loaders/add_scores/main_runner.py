@@ -1,91 +1,98 @@
-# main_runner.py
 import os
 import glob
-import torch
-import logging
-from typing import Dict, Any
+from typing import List
 
-# Structural component placement placeholder
 from .extractor import extract_unique_sequences
-from .evaluator import CrossModelEvaluator
 from .updater import update_json_with_predictions
+from ...models.registry import ModelRegistry
+from ...models.model_manager import ModelManager
+from ...utils.logger import get_custom_logger
 
-logger = logging.getLogger(__name__)
+logger = get_custom_logger(__name__)
 
 
 def run_cross_validation_pipeline(
     json_dir: str,
     output_dir: str,
-    models: Dict[str, Any],
+    model_names: List[str],
     device: str = "cuda",
+    # REMARK
+    # It was tested in `resources/tutorial_notebooks/tutorial.ipynb`, for gtx 1060 with 6G vRAM it it optimal
     batch_size: int = 64
 ) -> None:
     """
-    Executes the master cross-validation pipeline over all optimization log files.
-
-    This orchestrator scans a target directory for output JSON logs, extracts 
-    unique sequence variants, computes predictions across all three deep 
-    convolutional networks, and updates the files with cross-model scores.
+    Executes the master cross-validation pipeline using optimized ModelManager batching streams.
 
     :param json_dir: Path to the directory containing input JSON optimization logs.
     :type json_dir: str
     :param output_dir: Path to the directory where updated JSON logs will be saved.
     :type output_dir: str
-    :param models: Dictionary containing initialized PyTorch model objects.
-    :type models: Dict[str, Any]
+    :param model_names: List of model identification keys to request from ModelRegistry.
+    :type model_names: List[str]
     :param device: Compute device target for parallel matrix inference. Default is 'cuda'.
     :type device: str
-    :param batch_size: Maximum volume of sequences processed concurrently. Default is 64.
+    :param batch_size: Maximum volume of sequences processed concurrently. Default is 1024.
     :type batch_size: int
     :return: None
     :rtype: None
+    :raises FileNotFoundError: If the input directory does not exist or contains no JSON files.
     """
-    # Environment and file system setup
-    ## Verify existence of output directory boundaries
+    # Environment initialization
+    ## Verify input directory presence
+    if not os.path.exists(json_dir):
+        logger.error("Target execution directory verification failed: %s", json_dir)
+        raise FileNotFoundError(f"[PIPELINE] Target input directory does not exist: {json_dir}")
+
+    ## Verify output directory paths
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-
-    ## Initialize the unified cross-model evaluation engine
-    evaluator = CrossModelEvaluator(model_dict=models, device=device)
 
     ## Scan directory path for target log files
     json_pattern = os.path.join(json_dir, "*.json")
     target_files = glob.glob(json_pattern)
 
-    # Master batch execution loop
-    ## Iterate over isolated validation files
+    if not target_files:
+        logger.error("Empty directory matched for global configuration path pattern: %s", json_pattern)
+        raise FileNotFoundError(f"[PIPELINE] No target JSON files discovered matching pattern: {json_pattern}")
+
+    # Shared infrastructure resource pooling
+    ## Resolve structural models using the model framework registry
+    logger.info("Fetching requested target models from centralized model registry: %s", model_names)
+    models_dict = ModelRegistry.load(model_names)
+    
+    ## Initialize the optimized processing execution manager
+    manager = ModelManager(models_dict=models_dict, batch_size=batch_size)
+
+    # File batch processing loop
     for file_path in target_files:
         file_name = os.path.basename(file_path)
         destination_path = os.path.join(output_dir, file_name)
         
-        logger.info(f"[PIPELINE] Starting cross-validation for target: {file_name}")
+        logger.info("Starting batch validation operations for destination target: %s", file_name)
 
         try:
-            ### Extract unique nucleotide strings from deep network structures
+            ### Parse sequence payloads using the corrected dictionary hierarchy keys
             raw_data, unique_seqs = extract_unique_sequences(file_path)
             
             if not unique_seqs:
-                #### Handle edge case where file contains no sequences
-                logger.warning(f"[PIPELINE] No valid sequences isolated in file: {file_name}")
+                logger.warn("Zero unique nucleotide structures isolated from file context: %s", file_name)
                 continue
 
-            logger.info(f"[PIPELINE] Isolated {len(unique_seqs)} unique variants for parallel GPU execution")
+            logger.info("Isolated %s unique variants for high-throughput batch execution stream", len(unique_seqs))
 
-            ### Compute parallel multi-model matrix predictions on GPU
-            predictions_map = evaluator.compute_predictions(
-                sequences=unique_seqs, 
-                batch_size=batch_size
-            )
+            ### Execute high-performance multi-model cross scoring
+            predictions_map = manager.predict_sequences(sequences=unique_seqs)
 
-            ### Inject calculated validation scores back to the JSON matrix
+            ### Serialize updated metrics back to disk boundaries
             update_json_with_predictions(
                 json_path=file_path,
                 output_path=destination_path,
                 predictions=predictions_map
             )
             
-            logger.info(f"[PIPELINE] Successfully exported enriched dataset log to: {destination_path}")
+            logger.info("Successfully exported enriched structural dataset metrics log to: %s", destination_path)
 
         except Exception as error_exception:
-            ### Catch and report runtime exceptions during serialization steps
-            logger.error(f"[PIPELINE] Critical execution failure on target file {file_name}: {str(error_exception)}")
+            ### Capture full tracking traces for execution anomalies
+            logger.error("Critical exceptional failure encountered on dataset target: %s", file_name, exc_info=True)
+            raise error_exception
