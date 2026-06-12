@@ -7,9 +7,9 @@ import torch
 from typing import Dict, List, Tuple, Any
 
 from .base_optimizer import BaseOptimizer
-from .mutation_generator import MutationGenerator
-from .validator import SequenceValidator
-from ..utils import get_custom_logger
+from .utils.mutation_generator import MutationGenerator
+from ...utils.validator import SequenceValidator
+from ...utils.logger import get_custom_logger
 
 # Instantiation Protocol
 logger = get_custom_logger(__name__)

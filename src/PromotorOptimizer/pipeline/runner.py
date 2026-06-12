@@ -7,8 +7,8 @@ from typing import Dict, Any, Optional, Literal
 
 from ..models.model_manager import ModelManager
 from ..models.registry import ModelRegistry
-from ..optimizers.depracated.registry import OptimizerRegistry
-from ..interpreters.depracated.registry import InterpreterRegistry
+from ..optimizers.registry import OptimizerRegistry
+from ..interpreters.registry import InterpreterRegistry
 from ..core.wrapper import SequencePredictorModelWrapper
 from ..utils.logger import get_custom_logger
 from .configs import PipelineConfig

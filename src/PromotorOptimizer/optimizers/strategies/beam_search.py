@@ -1,13 +1,14 @@
-# Heading 1 (Deterministic Position-Scanning Beam Search Engine)
+1# Heading 1 (Deterministic Position-Scanning Beam Search Engine)
 ## Import validation constraints, mathematical utilities, and state tracking structures
 import numpy as np
 import torch
 from typing import Dict, List, Tuple, Any
 
 from .base_optimizer import BaseOptimizer
-from .mutation_generator import MutationGenerator
-from .validator import SequenceValidator
-from ..utils.logger import get_custom_logger
+from .utils.mutation_generator import MutationGenerator
+from ...utils.validator import SequenceValidator
+from ...utils.logger import get_custom_logger
+
 
 # Instantiation Protocol
 logger = get_custom_logger(__name__)
@@ -40,19 +41,19 @@ class BeamSearchOptimizer(BaseOptimizer):
         """
         Initializes the persistent state tracking dictionary for a beam search trajectory.
 
-        :param sequence: Input wild-type or seed nucleotide sequence string[cite: 5].
+        :param sequence: Input wild-type or seed nucleotide sequence string.
         :type sequence: str
-        :param config: Extracted runtime parameters matching the optimizer_config block[cite: 1, 5].
+        :param config: Extracted runtime parameters matching the optimizer_config block.
         :type config: Dict[str, Any]
-        :return: Initialized state dictionary tracking deterministic beam parameters[cite: 5].
+        :return: Initialized state dictionary tracking deterministic beam parameters.
         :rtype: Dict[str, Any]
         """
         logger.info("Instantiating fresh deterministic beam search state configurations.")
         
         # State tracking initialization
         ## Extract structural layout capacities from the verified configuration payload
-        beam_width = config.get("beam_width", 30)[cite: 13]
-        top_k_positions = config.get("top_k_positions", 40)[cite: 13]
+        beam_width = config.get("beam_width", 30)
+        top_k_positions = config.get("top_k_positions", 40)
         
         search_state = {
             "beam_width": beam_width,
@@ -79,17 +80,17 @@ class BeamSearchOptimizer(BaseOptimizer):
         Spawns validation-filtered child sequence variants by sweeping alternative nucleotides
         across the most significant positions identified by attribution scores.
 
-        :param search_state: Current active state dictionary tracking generations[cite: 5].
+        :param search_state: Current active state dictionary tracking generations.
         :type search_state: Dict[str, Any]
-        :param importance_maps: Attribution scores derived from the active interpreter strategy per model[cite: 5].
+        :param importance_maps: Attribution scores derived from the active interpreter strategy per model.
         :type importance_maps: Dict[str, Any]
-        :return: Unique collection list of validated mutated sequence strings[cite: 5].
+        :return: Unique collection list of validated mutated sequence strings.
         :rtype: List[str]
         """
         logger.info("Starting deterministic candidate pool generation via position scanning.")
         
         # Operational context preparation
-        ## Extract structural tuning properties and beam sets from the state context[cite: 13]
+        ## Extract structural tuning properties and beam sets from the state context
         active_beam = search_state["active_beam"]
         top_k_positions = search_state["top_k_positions"]
         prefix_len = search_state["prefix_len"]
@@ -99,7 +100,7 @@ class BeamSearchOptimizer(BaseOptimizer):
         seen_sequences = set()
         
         # Importance map aggregation
-        ## Compute the mean attribution matrix across all evaluated models to isolate high-significance coordinates[cite: 5]
+        ## Compute the mean attribution matrix across all evaluated models to isolate high-significance coordinates
         model_names = list(importance_maps.keys())
         first_map = np.array(importance_maps[model_names[0]])
         aggregated_importance = np.zeros_like(first_map)
@@ -109,23 +110,23 @@ class BeamSearchOptimizer(BaseOptimizer):
         aggregated_importance /= len(model_names)
         
         # Position reduction scoring
-        ## Reduce the multi-channel importance matrix to a single dimension by computing absolute sums per coordinate[cite: 13]
+        ## Reduce the multi-channel importance matrix to a single dimension by computing absolute sums per coordinate
         position_scores = np.abs(aggregated_importance).sum(axis=1)
         important_positions = position_scores.argsort()[::-1][:top_k_positions]
         
         # Lineage expansion loop
-        ## Sweep mutations systematically across each parent sequence currently retained within the beam[cite: 13]
+        ## Sweep mutations systematically across each parent sequence currently retained within the beam
         for _, parent_seq, mutated_positions in active_beam:
             
-            ## Iterate over identified target coordinates to evaluate single-point substitutions[cite: 13]
+            ## Iterate over identified target coordinates to evaluate single-point substitutions
             for pos in important_positions:
                 pos_idx = int(pos)
                 
-                ### Enforce Tabu search constraints by bypassing historically modified coordinates[cite: 13]
+                ### Enforce Tabu search constraints by bypassing historically modified coordinates
                 if pos_idx in mutated_positions:
                     continue
                     
-                ### Enforce adapter domain boundary protections[cite: 13]
+                ### Enforce adapter domain boundary protections
                 if pos_idx < prefix_len:
                     continue
                 if suffix_len > 0 and pos_idx >= len(parent_seq) - suffix_len:
@@ -138,12 +139,12 @@ class BeamSearchOptimizer(BaseOptimizer):
                     if new_base == current_base:
                         continue
                         
-                    #### Construct the physical nucleotide string mutant variant[cite: 13]
+                    #### Construct the physical nucleotide string mutant variant
                     mutated_list = list(parent_seq)
                     mutated_list[pos_idx] = new_base
                     child_seq = "".join(mutated_list)
                     
-                    #### Apply structural biological constraint checks and check for uniqueness[cite: 13]
+                    #### Apply structural biological constraint checks and check for uniqueness
                     if child_seq in seen_sequences:
                         continue
                         
@@ -165,25 +166,25 @@ class BeamSearchOptimizer(BaseOptimizer):
         scored_candidates: List[Tuple[str, float]]
     ) -> Dict[str, Any]:
         """
-        Applies deterministic filtering and deduplication to update the active tracking beam[cite: 13].
+        Applies deterministic filtering and deduplication to update the active tracking beam.
 
-        :param search_state: Current active state dictionary tracking generations[cite: 5].
+        :param search_state: Current active state dictionary tracking generations.
         :type search_state: Dict[str, Any]
-        :param scored_candidates: Collection of generated sequences paired with unified fitness scores[cite: 5].
+        :param scored_candidates: Collection of generated sequences paired with unified fitness scores.
         :type scored_candidates: List[Tuple[str, float]]
-        :return: Updated state dictionary configuration map for the subsequent search step[cite: 5].
+        :return: Updated state dictionary configuration map for the subsequent search step.
         :rtype: Dict[str, Any]
         """
         logger.info("Executing generation step transition and selection phase for beam search.")
         
         # Extract operational limits
-        ## Retrieve target beam width dimensions and current active lineage tracks[cite: 13]
-        beam_width = search_state["beam_width"][cite: 13]
-        active_beam = search_state["active_beam"][cite: 13]
+        ## Retrieve target beam width dimensions and current active lineage tracks
+        beam_width = search_state["beam_width"]
+        active_beam = search_state["active_beam"]
         
         # Global optimal record verification
-        ## Sort the entire raw candidate pool based on score evaluation descending profiles[cite: 13]
-        scored_candidates.sort(key=lambda x: x[1], reverse=True)[cite: 13]
+        ## Sort the entire raw candidate pool based on score evaluation descending profiles
+        scored_candidates.sort(key=lambda x: x[1], reverse=True)
         top_child_seq, top_child_score = scored_candidates[0]
         
         if top_child_score > search_state["best_score"]:
@@ -192,7 +193,7 @@ class BeamSearchOptimizer(BaseOptimizer):
             search_state["best_sequence"] = top_child_seq
             
         # Deduplication and width constraint filtering
-        ## Iterate over candidate variants to construct a unique trajectory pool up to beam capacity limits[cite: 13]
+        ## Iterate over candidate variants to construct a unique trajectory pool up to beam capacity limits
         next_beam = []
         seen_sequences = set()
         
@@ -202,22 +203,22 @@ class BeamSearchOptimizer(BaseOptimizer):
                 
             seen_sequences.add(child_seq)
             
-            ### Reconstruct mutation lineage coordinate histories by checking variations against parental frames[cite: 13]
+            ### Reconstruct mutation lineage coordinate histories by checking variations against parental frames
             child_mutations = set()
             for _, parent_seq, parent_mut_set in active_beam:
-                #### Identify the unique single-point modification coordinate index[cite: 13]
+                #### Identify the unique single-point modification coordinate index
                 diff_positions = [i for i in range(len(parent_seq)) if parent_seq[i] != child_seq[i]]
                 if len(diff_positions) == 1:
-                    child_mutations = parent_mut_set | {int(diff_positions[0])}[cite: 13]
+                    child_mutations = parent_mut_set | {int(diff_positions[0])}
                     break
                     
-            next_beam.append((child_score, child_seq, child_mutations))[cite: 13]
+            next_beam.append((child_score, child_seq, child_mutations))
             
-            ### Break loop execution once the required deterministic track width is fully populated[cite: 13]
+            ### Break loop execution once the required deterministic track width is fully populated
             if len(next_beam) == beam_width:
                 break
                 
-        search_state["active_beam"] = next_beam[cite: 13]
+        search_state["active_beam"] = next_beam
         
         logger.info("Beam selection complete. Retained active candidate tracks volume: %s", len(next_beam))
         return search_state

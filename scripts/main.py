@@ -5,6 +5,7 @@ from PromotorOptimizer.pipeline.configs import PipelineConfig
 from PromotorOptimizer.pipeline.runner import PipelineRunner
 
 
+#TODO runner 
 def parse_args():
 
     parser = argparse.ArgumentParser()

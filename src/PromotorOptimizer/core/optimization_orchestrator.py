@@ -90,6 +90,7 @@ class TrajectoryOrchestrator:
         """
         logger.info("Launching isolated execution track for target sequence profile.")
         optimizer_config = runtime_context.get("optimizer_config", {})
+        method = runtime_context.get("method", "optimization")
         iterations = optimizer_config.get("iterations", 50)
         
         registered_models = self.model_manager.get_model_names()
@@ -158,9 +159,24 @@ class TrajectoryOrchestrator:
                 
             ## Evaluate fitness rankings for candidate variants in a unified batch operation
             scored_candidates = []
-            fitness_evaluations = self.model_manager.score_sequences(candidate_pool)
+            
+            ## Fetch high-throughput raw predictions from the manager container
+            raw_predictions = self.model_manager.predict_sequences(candidate_pool)
+            target_expression = runtime_context.get("target_expression", 0.0)
+            penalty_std = optimizer_config.get("penalty_std", 0.2)
+
             for candidate in candidate_pool:
-                fitness_score = fitness_evaluations[candidate]["fitness"]
+                scores = np.array(list(raw_predictions[candidate].values()))
+                mean_score = float(scores.mean())
+                std_score = float(scores.std())
+                
+                ### Apply runtime context branches to determine structural fitness
+                #TODO - add scoring functions moduel
+                if method == "reconstruction":
+                    fitness_score = -abs(mean_score - target_expression)
+                else:
+                    fitness_score = mean_score - penalty_std * std_score
+                    
                 scored_candidates.append((candidate, fitness_score))
                 
             ## Apply selection filters to transition the internal search parameters

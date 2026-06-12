@@ -7,7 +7,7 @@ import torch
 from typing import Dict, List, Tuple, Any
 
 from .base_optimizer import BaseOptimizer
-from ..utils.mutation_generator import MutationGenerator
+from .utils.mutation_generator import MutationGenerator
 from ...utils.validator import SequenceValidator
 from ...utils.logger import get_custom_logger
 

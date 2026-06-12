@@ -5,6 +5,7 @@ import torch
 from .base_model_manager import BaseModelManager
 from ..utils.preprocessing import encode_batch
 from ..utils.logger import get_custom_logger
+from typing import Optional
 
 logger = get_custom_logger(__name__)
 
