@@ -10,6 +10,7 @@ from .loaders.original_modified import load_original_modified
 from .datasets.dna_dataset import DNADataset
 from .datasets.dna_no_adapters_dataset import DNADatasetNoAdapters
 
+REGISTERD_MODELS = ['original_modified', "deepstarr", "deepstarr_second"]
 
 class ModelRegistry:
 
@@ -42,7 +43,7 @@ class ModelRegistry:
                     "dataset_class": DNADataset
                 }
 
-            elif name in ["original_modified", "noadapters_model"]:
+            elif name in ["original_modified"]:
 
                 model = load_original_modified(
                     "data/checkpoints/original_modified.pth",
@@ -58,7 +59,7 @@ class ModelRegistry:
             # -------------------------
             # DEEPSTARR
             # -------------------------
-            elif name in ["deepstarr", "scheduler_plateau"]:
+            elif name in ["deepstarr"]:
 
                 model = load_deepstarr(
                     "data/checkpoints/scheduler_plateau.pth",
