@@ -1,6 +1,11 @@
+# Heading 1 (Unified Analytical Entry-Point Loader)
+## Structural JSON log flattening and metric integration pipeline
+import json
+import os
 from pathlib import Path
 from typing import List, Optional, Any
 import pandas as pd
+import numpy as np
 
 from .utils.load_json import parse_json_folder
 from .add_metrics.orchestror import calculate_trajectory_metrics
@@ -8,6 +13,7 @@ from ..utils.logger import get_custom_logger
 
 # Instantiation Protocol
 logger = get_custom_logger(__name__)
+
 
 
 def OptimizerLoader(json_folder_path: Path | str, metrics_list: Optional[List[Any]] = None) -> pd.DataFrame:
@@ -22,7 +28,7 @@ def OptimizerLoader(json_folder_path: Path | str, metrics_list: Optional[List[An
     :return: Long-format DataFrame compiling chronological step metrics and beam states.
     :rtype: pd.DataFrame
     """
-    logger.info("Executing high-throughput modern log ingestion pass on path: %s", json_folder_path)
+    logger.info("Executing log ingestion pass on path: %s", json_folder_path)
     
     # Flatten raw nested tree configurations directly to dataframe matrices
     rtn_df = parse_json_folder(json_folder_path)

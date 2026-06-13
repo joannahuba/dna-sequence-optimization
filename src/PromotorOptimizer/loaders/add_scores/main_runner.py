@@ -11,7 +11,7 @@ from ...utils.logger import get_custom_logger
 logger = get_custom_logger(__name__)
 
 
-def run_cross_validation_pipeline(
+def run_add_scores(
     json_dir: str,
     output_dir: str,
     model_names: List[str],

@@ -124,6 +124,24 @@ class TrajectoryOrchestrator:
                 models_attributions[model_name] = attribution_matrix
                 global_importance_maps[model_name] = attribution_matrix
 
+            # Objective cost score computation
+            ## Calculate explicit mathematical fitness for the current target sequence state[cite: 31]
+            target_expression = runtime_context.get("target_expression", 0.0)
+            penalty_std = optimizer_config.get("penalty_std", 0.2)
+            
+            current_scores = np.array(list(models_predictions.values()))
+            current_mean = float(current_scores.mean()) if current_scores.size > 0 else 0.0
+            current_std = float(current_scores.std()) if current_scores.size > 0 else 0.0
+            
+            if method == "reconstruction":
+                current_cost_score = -abs(current_mean - target_expression)
+            else:
+                current_cost_score = current_mean - penalty_std * current_std
+
+            ## Hot-fix initialization placeholder inside the active beam array at iteration 0[cite: 31]
+            if search_state["active_beam"][0][0] == -float("inf"):
+                search_state["active_beam"][0] = (current_cost_score, search_state["active_beam"][0][1], search_state["active_beam"][0][2])
+
             # Beam lineage metadata tracking
             ## Extract and serialize the active population layout from the search state
             beam_population_log = [
@@ -138,6 +156,7 @@ class TrajectoryOrchestrator:
             step_record = {
                 "iteration": it,
                 "current_sequence": current_sequence,
+                "score": current_cost_score,
                 "models_predictions": models_predictions,
                 "models_attributions": models_attributions,
                 "beam_population": beam_population_log
@@ -234,9 +253,22 @@ class TrajectoryOrchestrator:
             
             # Package attribution metrics under target model name to match optimizer interface signatures
             global_importance_maps = {target_model: attribution_matrix}
-            
             models_predictions = {target_model: prediction_map[current_sequence].get(target_model, 0.0)}
             models_attributions = {target_model: attribution_matrix}
+
+            # Objective cost score computation
+            ## Calculate explicit mathematical fitness for the single isolated target model[cite: 31]
+            target_expression = runtime_context.get("target_expression", 0.0)
+            current_model_score = float(models_predictions[target_model])
+            
+            if method == "reconstruction":
+                current_cost_score = -abs(current_model_score - target_expression)
+            else:
+                current_cost_score = current_model_score
+
+            ## Hot-fix initialization placeholder inside the active beam array at iteration 0[cite: 31]
+            if search_state["active_beam"][0][0] == -float("inf"):
+                search_state["active_beam"][0] = (current_cost_score, search_state["active_beam"][0][1], search_state["active_beam"][0][2])
 
             # Beam lineage metadata tracking
             ## Extract and serialize the active population layout from the search state
@@ -252,6 +284,7 @@ class TrajectoryOrchestrator:
             step_record = {
                 "iteration": it,
                 "current_sequence": current_sequence,
+                "score": current_cost_score,
                 "models_predictions": models_predictions,
                 "models_attributions": models_attributions,
                 "beam_population": beam_population_log
