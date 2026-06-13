@@ -103,7 +103,9 @@ class TrajectoryOrchestrator:
 
         # Evolutionary optimization timeline loop
         for it in range(iterations):
-            logger.info("Aggregated trajectory execution cycle: %s / %s", it + 1, iterations)
+            ## Apply temporal sampling constraints to the iteration progress log tracker
+            if it < 5 or (it + 1) % 5 == 0:
+                logger.info("Aggregated trajectory execution cycle: %s / %s", it + 1, iterations)
             
             prediction_map = self.model_manager.predict_sequences([current_sequence])
             X_encoded = encode_batch([current_sequence])
@@ -121,8 +123,6 @@ class TrajectoryOrchestrator:
                 models_predictions[model_name] = prediction_map[current_sequence].get(model_name, 0.0)
                 models_attributions[model_name] = attribution_matrix
                 global_importance_maps[model_name] = attribution_matrix
-
-            
 
             # Beam lineage metadata tracking
             ## Extract and serialize the active population layout from the search state
@@ -221,7 +221,9 @@ class TrajectoryOrchestrator:
 
         # Evolutionary optimization timeline loop
         for it in range(iterations):
-            logger.info("Discrete trajectory execution cycle for model %s: %s / %s", target_model, it + 1, iterations)
+            ## Apply temporal sampling constraints to the iteration progress log tracker
+            if it < 5 or (it + 1) % 5 == 0:
+                logger.info("Discrete trajectory execution cycle for model %s: %s / %s", target_model, it + 1, iterations)
             
             # Direct single-model optimization tracking pass
             prediction_map = self.model_manager.predict_sequences([current_sequence], model_names=target_model)
