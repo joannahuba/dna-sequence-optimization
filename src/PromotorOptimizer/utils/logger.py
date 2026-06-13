@@ -61,6 +61,8 @@ def get_custom_logger(
     logger.setLevel(level)
 
     # Handler synchronization block
+    ## Prevent double printing logs 
+    logger.propagate = False
     ## Prevent handler duplication when modules are re-imported or reloaded
     if not logger.handlers:
         ### Stream routing configuration
