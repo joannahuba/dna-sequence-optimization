@@ -122,11 +122,25 @@ class TrajectoryOrchestrator:
                 models_attributions[model_name] = attribution_matrix
                 global_importance_maps[model_name] = attribution_matrix
 
+            
+
+            # Beam lineage metadata tracking
+            ## Extract and serialize the active population layout from the search state
+            beam_population_log = [
+                {
+                    "score": float(node_score),
+                    "sequence": node_seq,
+                    "mutated_positions": list(node_mut_set)
+                }
+                for node_score, node_seq, node_mut_set in search_state.get("active_beam", [])
+            ]
+
             step_record = {
                 "iteration": it,
                 "current_sequence": current_sequence,
                 "models_predictions": models_predictions,
-                "models_attributions": models_attributions
+                "models_attributions": models_attributions,
+                "beam_population": beam_population_log
             }
             models_tracking_payload["aggregated_models"]["steps"].append(step_record)
 
@@ -222,11 +236,23 @@ class TrajectoryOrchestrator:
             models_predictions = {target_model: prediction_map[current_sequence].get(target_model, 0.0)}
             models_attributions = {target_model: attribution_matrix}
 
+            # Beam lineage metadata tracking
+            ## Extract and serialize the active population layout from the search state
+            beam_population_log = [
+                {
+                    "score": float(node_score),
+                    "sequence": node_seq,
+                    "mutated_positions": list(node_mut_set)
+                }
+                for node_score, node_seq, node_mut_set in search_state.get("active_beam", [])
+            ]
+
             step_record = {
                 "iteration": it,
                 "current_sequence": current_sequence,
                 "models_predictions": models_predictions,
-                "models_attributions": models_attributions
+                "models_attributions": models_attributions,
+                "beam_population": beam_population_log
             }
             models_tracking_payload[target_model]["steps"].append(step_record)
 
