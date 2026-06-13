@@ -76,10 +76,8 @@ class ModelManager(BaseModelManager):
     # RAW STRING PREDICTION
     # =====================================================
 
-    # =====================================================
-    # RAW STRING PREDICTION
-    # =====================================================
-
+    # Heading 1 (Model Inference Management Space)
+## Processing high-throughput model batch sequences safely
     def predict_sequences(
         self,
         sequences: List[str],
@@ -145,6 +143,11 @@ class ModelManager(BaseModelManager):
 
                 ### Fetch prediction arrays back to host memory space
                 ratio_np = ratio.detach().cpu().numpy()
+
+                ### Dimensionality normalization guard
+                # Ensure the numpy array is at least 1D to prevent scalar IndexError failures on specific models
+                if ratio_np.ndim == 0:
+                    ratio_np = np.atleast_1d(ratio_np)
 
                 ### Fast index mapping block
                 for idx, seq in enumerate(batch_seqs):
