@@ -1,5 +1,5 @@
-# models/architecture/deepstarr.py
-
+# Heading 1 (DeepSTARR Model Architecture Space)
+## Convolutional neural network for high-throughput regulatory sequence prediction
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -78,4 +78,7 @@ class DeepSTARRLike(nn.Module):
 
         reg_out = self.regressor(x)
 
-        return cls_out.squeeze(), reg_out.squeeze()
+        # Invariant shape protection
+        ## Force explicit dimension removal on the task axis to securely protect the batch axis layer
+        # @joannahuba UWAGA: zobacz sobie na tą konstrukcje, ona jest ważna ponieważ poprzednio niszczyłaś batch_size, co powodowało że model brał informacje element po elemencie 
+        return cls_out.squeeze(dim=-1), reg_out.squeeze(dim=-1)

@@ -1,211 +1,268 @@
-# core/wrapper.py
-
+# Heading 1 (Core Pipeline Orchestration Space)
+## Module infrastructure imports, trajectory routers, and serialization utilities
+import json
+import os
 import time
-
 from typing import Dict, List, Optional, Any, Literal
+
 from ..models.model_manager import ModelManager
+from .optimization_orchestrator import TrajectoryOrchestrator
+from ..utils.logger import get_custom_logger
+
+# Instantiation Protocol
+logger = get_custom_logger(__name__)
 
 
 class SequencePredictorModelWrapper:
+    """
+    Orchestration wrapper managing execution flows across multi-target sequences,
+    optimizers, and structural model importance interpreters.
+    """
 
     def __init__(
         self,
         model_type: Literal["ensemble", "single"],
         mode: Literal["optimization", "reconstruction"],
-        sequences: List[str],
+        sequences: Dict[str, Dict[str, Any]],
         model_manager: ModelManager,
         optimizers_list: List[Any],
-        interpreters_list: List[Any]
+        interpreters_list: List[Any],
+        prefix_len: int = 0,
+        suffix_len: int = 0
     ):
+        """
+        Initializes the sequence execution tracking wrapper.
 
+        :param model_type: Flag specifying single or ensemble network evaluations.
+        :type model_type: str
+        :param mode: Execution mode determining operational scoring loops.
+        :type mode: str
+        :param sequences: Nested mapping containing targets and experimental boundaries.
+        :type sequences: dict
+        :param model_manager: Global computational execution container for target networks.
+        :type model_manager: ModelManager
+        :param optimizers_list: Instantiated sequence search heuristics.
+        :type optimizers_list: list
+        :param interpreters_list: Gradient tracker and molecular attribution frameworks.
+        :type interpreters_list: list
+        :param prefix_len: Number of unmutable flanking nucleotides at the sequence start.
+        :type prefix_len: int
+        :param suffix_len: Number of unmutable flanking nucleotides at the sequence end.
+        :type suffix_len: int
+        """
         self.model_type = model_type
         self.mode = mode
         self.sequences = sequences
         self.model_manager = model_manager
         self.optimizers_list = optimizers_list
         self.interpreters_list = interpreters_list
+        self.prefix_len = prefix_len
+        self.suffix_len = suffix_len
         self.output = {}
 
+    def _incremental_checkpoint(self, output_path: Optional[str]) -> None:
+        """
+        Serializes current trajectory states directly to file storage targets.
+
+        :param output_path: Destination filesystem string path.
+        :type output_path: str, optional
+        """
+        if not output_path:
+            return
+        try:
+            dir_name = os.path.dirname(output_path)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
+            with open(output_path, "w") as out_file:
+                json.dump(self.output, out_file, indent=2, default=str)
+        except Exception as exc:
+            logger.error("Failed to execute incremental pipeline checkpoint save.", exc_info=True)
+
     # -------------------------------------------------
-    # OPTIMIZATION
+    # OPTIMIZATION MODE EXECUTION
     # -------------------------------------------------
 
     def OptimizeSequences(
         self,
-        config: Optional[Dict] = None
-    ):
+        override_config: Optional[Dict[str, Any]] = None,
+        output_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Executes sequence optimization trajectories across all registered targets to maximize activity.
 
-        print("\n" + "=" * 80)
-        print("[PIPELINE] OPTIMIZATION MODE")
-        print("=" * 80)
-
-        config = config or {}
-
+        :param override_config: Runtime dictionary containing external parameter overrides.
+        :type override_config: dict, optional
+        :param output_path: Local tracking output path for executing file checkpoints.
+        :type output_path: str, optional
+        :return: Map structure compiling tracking information across internal steps.
+        :rtype: dict
+        """
+        logger.info("Initializing sequence maximization optimization pipeline.")
+        override_config = override_config or {}
         total_sequences = len(self.sequences)
 
-        for idx, (seq_id, seq_data) in enumerate(
-            self.sequences.items(),
-            start=1
-        ):
-
+        # Processing loop
+        ## Process target sequences sequentially
+        for idx, (seq_id, seq_data) in enumerate(self.sequences.items(), start=1):
             start_time = time.time()
-
             seq = seq_data["sequence"]
 
-            print(
-                f"\n[SEQUENCE {idx}/{total_sequences}] "
-                f"{seq_id}"
-            )
+            logger.info("Processing optimization sequence %s/%s | ID: %s", idx, total_sequences, seq_id)
 
-            print(
-                f"[INFO] Length = {len(seq)}"
-            )
+            self.output[seq_id] = {
+                "sequence_metadata": {
+                    "initial_sequence": seq,
+                    "mutation_budget": seq_data.get("mutation_budget", None),
+                    "original_activity": seq_data.get("original_activity", None)
+                },
+                "optimizers": {}
+            }
 
-            interpreter_dict = {}
+            ## Execute registered search heuristics sequentially
+            for optimizer in self.optimizers_list:
+                optimizer_name = optimizer.__class__.__name__
+                optimizer_payload = override_config.get("optimizers", {}).get(optimizer_name, {})
+                optimizer_config = optimizer_payload.get("optimizer_config", {})
 
-            for interpreter in self.interpreters_list:
-
-                interpreter_name = (
-                    interpreter.__class__.__name__
-                )
-
-                print(
-                    f"[INFO] Running interpreter: "
-                    f"{interpreter_name}"
-                )
-
-                interpretation = interpreter.explain(
-                    model_manager=self.model_manager,
-                    sequence=seq,
-                    model_type=self.model_type
-                )
-
-                optimizer_dict = {}
-
-                for optimizer in self.optimizers_list:
-
-                    optimizer_name = (
-                        optimizer.__class__.__name__
-                    )
-
-                    print(
-                        f"[INFO] Running optimizer: "
-                        f"{optimizer_name}"
-                    )
-
-                    result = optimizer.optimize(
-                        sequence=seq,
-                        model_manager=self.model_manager,
-                        interpretation=interpretation,
-                        config=config
-                    )
-
-                    optimizer_dict[
-                        optimizer_name
-                    ] = result
-
-                    print(
-                        f"[INFO] Optimizer finished: "
-                        f"{optimizer_name}"
-                    )
-
-                interpreter_dict[
-                    interpreter_name
-                ] = {
-                    "interpretation": interpretation,
-                    "optimizers_results": optimizer_dict
+                self.output[seq_id]["optimizers"][optimizer_name] = {
+                    "optimizer_config": optimizer_config,
+                    "interpreters": {}
                 }
 
-            self.output[seq_id] = interpreter_dict
+                ## Execute active molecular attribution interpreters inside the optimizer path
+                for interpreter in self.interpreters_list:
+                    interpreter_name = interpreter.__class__.__name__
+                    interpreter_payload = optimizer_payload.get("interpreters", {}).get(interpreter_name, {})
+                    interpreter_config = interpreter_payload.get("interpreter_config", {})
 
-            elapsed = (
-                time.time() - start_time
-            )
+                    ### Inject structural boundary controls and maximization flags into context
+                    runtime_context = {
+                        "method": "optimization",
+                        "model_type": self.model_type,
+                        "optimizer_config": optimizer_config,
+                        "interpreter_config": interpreter_config,
+                        "prefix_len": self.prefix_len,
+                        "suffix_len": self.suffix_len
+                    }
 
-            print(
-                f"[INFO] Finished sequence "
-                f"{seq_id} "
-                f"in {elapsed:.2f}s"
-            )
+                    ### Instantiate the functional orchestrator and drive execution trajectories
+                    orchestrator = TrajectoryOrchestrator(
+                        model_manager=self.model_manager,
+                        optimizer=optimizer,
+                        interpreter=interpreter
+                    )
+                    
+                    trajectory_results = orchestrator.run_trajectory(
+                        initial_sequence=seq,
+                        runtime_context=runtime_context
+                    )
 
-        print("\n[PIPELINE] Optimization finished")
+                    self.output[seq_id]["optimizers"][optimizer_name]["interpreters"][interpreter_name] = {
+                        "interpreter_config": interpreter_config,
+                        "models": trajectory_results.get("models", {})
+                    }
+
+                    ### Commit active structural state data directly to the disk target
+                    self._incremental_checkpoint(output_path)
+
+            elapsed = time.time() - start_time
+            logger.info("Completed tracking operations for sequence %s in %2.f seconds.", seq_id, elapsed)
 
         return self.output
 
     # -------------------------------------------------
-    # RECONSTRUCTION
+    # RECONSTRUCTION MODE EXECUTION
     # -------------------------------------------------
 
     def ReconstructSequences(
         self,
-        reconstruction_config: Optional[Dict] = None,
-    ):
-        print("\n" + "=" * 80)
-        print("[PIPELINE] RECONSTRUCTION MODE")
-        print("=" * 80)
+        override_config: Optional[Dict[str, Any]] = None,
+        output_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Executes sequence reconstruction tracking to target specific baseline activity constraints.
 
-        reconstruction_config = reconstruction_config or {}
-
-        self.output = {}
-
+        :param override_config: Runtime dictionary containing external parameter overrides.
+        :type override_config: dict, optional
+        :param output_path: Local tracking output path for executing file checkpoints.
+        :type output_path: str, optional
+        :return: Map structure compiling tracking information across internal steps.
+        :rtype: dict
+        """
+        logger.info("Initializing constrained expression reconstruction pipeline.")
+        override_config = override_config or {}
         total_sequences = len(self.sequences)
 
-        for idx, (seq_id, seq_data) in enumerate(
-            self.sequences.items(),
-            start=1
-        ):
-
+        # Processing loop
+        ## Process target sequences sequentially
+        for idx, (seq_id, seq_data) in enumerate(self.sequences.items(), start=1):
             start_time = time.time()
-
             seq = seq_data["sequence"]
             mutation_budget = seq_data["mutation_budget"]
             original_activity = seq_data["original_activity"]
 
-            print(f"\n[SEQUENCE {idx}/{total_sequences}] {seq_id}")
-            print(f"[INFO] Length = {len(seq)}")
-            print(f"[INFO] Mutation budget = {mutation_budget}")
-            print(f"[INFO] Target activity = {original_activity}")
+            logger.info("Reconstructing target sequence %s/%s | ID: %s", idx, total_sequences, seq_id)
 
-            # FIX: clean config contract
-            config = dict(reconstruction_config)
-            config.update({
-                "mutation_budget": mutation_budget,
-                "target_expression": original_activity,
-                "method": "reconstruction",
-                "iterations": mutation_budget
-            })
+            self.output[seq_id] = {
+                "sequence_metadata": {
+                    "initial_sequence": seq,
+                    "mutation_budget": mutation_budget,
+                    "original_activity": original_activity
+                },
+                "optimizers": {}
+            }
 
-            interpreter_dict = {}
+            ## Execute registered search heuristics sequentially
+            for optimizer in self.optimizers_list:
+                optimizer_name = optimizer.__class__.__name__
+                optimizer_payload = override_config.get("optimizers", {}).get(optimizer_name, {})
+                optimizer_config = optimizer_payload.get("optimizer_config", {})
 
-            for interpreter in self.interpreters_list:
-
-                interpretation = interpreter.explain(
-                    model_manager=self.model_manager,
-                    sequence=seq,
-                    model_type=self.model_type
-                )
-
-                optimizer_dict = {}
-
-                for optimizer in self.optimizers_list:
-
-                    result = optimizer.optimize(
-                        sequence=seq,
-                        model_manager=self.model_manager,
-                        interpretation=interpretation,
-                        config=config
-                    )
-
-                    optimizer_dict[optimizer.__class__.__name__] = result
-
-                interpreter_dict[interpreter.__class__.__name__] = {
-                    "interpretation": interpretation,
-                    "optimizers_results": optimizer_dict
+                self.output[seq_id]["optimizers"][optimizer_name] = {
+                    "optimizer_config": optimizer_config,
+                    "interpreters": {}
                 }
 
-            self.output[seq_id] = interpreter_dict
+                ## Execute active molecular attribution interpreters inside the optimizer path
+                for interpreter in self.interpreters_list:
+                    interpreter_name = interpreter.__class__.__name__
+                    interpreter_payload = optimizer_payload.get("interpreters", {}).get(interpreter_name, {})
+                    interpreter_config = interpreter_payload.get("interpreter_config", {})
 
-            print(f"[INFO] Finished sequence {seq_id} in {time.time()-start_time:.2f}s")
+                    ### Inject strict mathematical targeting limits and expression requirements
+                    runtime_context = {
+                        "method": "reconstruction",
+                        "model_type": self.model_type,
+                        "target_expression": original_activity,
+                        "mutation_budget": mutation_budget,
+                        "optimizer_config": optimizer_config,
+                        "interpreter_config": interpreter_config,
+                        "prefix_len": self.prefix_len,
+                        "suffix_len": self.suffix_len
+                    }
 
-        print("\n[PIPELINE] Reconstruction finished")
+                    ### Instantiate the functional orchestrator and drive execution trajectories
+                    orchestrator = TrajectoryOrchestrator(
+                        model_manager=self.model_manager,
+                        optimizer=optimizer,
+                        interpreter=interpreter
+                    )
+                    
+                    trajectory_results = orchestrator.run_trajectory(
+                        initial_sequence=seq,
+                        runtime_context=runtime_context
+                    )
+
+                    self.output[seq_id]["optimizers"][optimizer_name]["interpreters"][interpreter_name] = {
+                        "interpreter_config": interpreter_config,
+                        "models": trajectory_results.get("models", {})
+                    }
+
+                    ### Commit active structural state data directly to the disk target
+                    self._incremental_checkpoint(output_path)
+
+            elapsed = time.time() - start_time
+            logger.info("Completed reconstruction operations for sequence %s in %2.f seconds.", seq_id, elapsed)
+
+        logger.info("All sequence reconstruction pipelines completed successfully.")
         return self.output

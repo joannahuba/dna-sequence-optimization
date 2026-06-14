@@ -75,14 +75,157 @@ Asia
 
 # 1. How to Run the Project
 
+## 1.0 Main execution - reconstruction
+
+
+```bash
+# beam search
+python scripts/main.py \
+    --input data/reconstruction_input.tsv \
+    --output data/results_final/results_reconstruction_final_beam.json \
+    --task-mode constrained_recovery \
+    --models deepstarr deepstarr_second original_modified \
+    --optimizers beam_search \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 40 
+
+# default Metropolis hastings
+python scripts/main.py \
+    --input data/reconstruction_input.tsv \
+    --output data/results_final/results_reconstruction_final_mh.json \
+    --task-mode constrained_recovery \
+    --models deepstarr deepstarr_second original_modified \
+    --optimizers search_stochastic_mh \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 40 
+
+# beam serach with metropolis hastings acceptance
+python scripts/main.py \
+    --input data/reconstruction_input.tsv \
+    --output data/results_final/results_reconstruction_final_beam_mh.json \
+    --task-mode constrained_recovery \
+    --models deepstarr deepstarr_second original_modified \
+    --optimizers beam_search_stochastic_mh \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 40 
+
+# beam serach with boltzman acceptance
+python scripts/main.py \
+    --input data/reconstruction_input.tsv \
+    --output data/results_final/results_reconstruction_final_beam_boltzman.json \
+    --task-mode constrained_recovery \
+    --models deepstarr deepstarr_second original_modified \
+    --optimizers beam_search_stochastic_boltzman \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 40 
+
+```
+
+## 1.0 Main execution - prediction
+
+```bash
+
+# beam search
+python scripts/main.py \
+    --input data/optimization_input.tsv \
+    --output data/results_final/results_optimization_final_beam.json \
+    --task-mode optimization \
+    --models deepstarr deepstarr_second original_modified \
+    --optimizers beam_search \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 40 
+
+# default Metropolis hastings
+python scripts/main.py \
+    --input data/optimization_input.tsv \
+    --output data/results_final/results_optimization_final_mh.json \
+    --task-mode optimization \
+    --models deepstarr deepstarr_second original_modified \
+    --optimizers search_stochastic_mh \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 40 
+
+# beam serach with metropolis hastings acceptance
+python scripts/main.py \
+    --input data/optimization_input.tsv \
+    --output data/results_final/results_optimization_final_beam_mh.json \
+    --task-mode optimization \
+    --models deepstarr deepstarr_second original_modified \
+    --optimizers beam_search_stochastic_mh \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 40 
+
+# beam serach with boltzman acceptance
+python scripts/main.py \
+    --input data/optimization_input.tsv \
+    --output data/results_final/results_optimization_final_beam_boltzman.json \
+    --task-mode optimization \
+    --models deepstarr deepstarr_second original_modified \
+    --optimizers beam_search_stochastic_boltzman \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 40 
+
+
+```
+
+## 1.0 Main execution - tests
+
+```bash
+# TODO - test set 
+# beam search
+python scripts/main.py \
+    --input data/reconstruction_input.tsv \
+    --output data/results_test/results_reconstruction_final_beam.json \
+    --task-mode constrained_recovery \
+    --models original_modified \
+    --optimizers beam_search \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 2
+
+# default Metropolis hastings
+python scripts/main.py \
+    --input data/reconstruction_input.tsv \
+    --output data/results_test/results_reconstruction_final_mh.json \
+    --task-mode constrained_recovery \
+    --models deep_star \
+    --optimizers search_stochastic_mh \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 2
+
+# beam serach with metropolis hastings acceptance
+python scripts/main.py \
+    --input data/reconstruction_input.tsv \
+    --output data/results_test/results_reconstruction_final_beam_mh.json \
+    --task-mode constrained_recovery \
+    --models deepstarr_second \
+    --optimizers beam_search_stochastic_mh \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 2
+
+# beam serach with boltzman acceptance
+python scripts/main.py \
+    --input data/reconstruction_input.tsv \
+    --output data/results_test/results_reconstruction_final_beam_boltzman.json \
+    --task-mode constrained_recovery \
+    --models deepstarr \
+    --optimizers beam_search_stochastic_boltzman \
+    --interpreters saliency mutagenesis integrated_gradients \
+    --iterations 2 
+
+
+```
+
+
+
+
 ## 1.1 Basic Execution
 
 Run the pipeline from `main.py`:
 
 ```bash
-python main.py \
-  --input data/sequences.tsv \
-  --output results.json \
+python scripts/main.py \
+  --input data/reconstruction_input.tsv \
+  --output data/results/results_joanna_beam.json \
   --task-mode constrained_recovery \
   --models deepstarr \
   --optimizers beam_search \
@@ -92,7 +235,8 @@ python main.py \
 
 ```bash
 # max debugging sript
-python main.py \
+## bez adapterów i beam seach
+python scripts/main.py \
   --input data/reconstruction_input.tsv \
   --output results_max.json \
   --task-mode constrained_recovery \
@@ -100,8 +244,48 @@ python main.py \
   --optimizers beam_search \
   --interpreters saliency \
   --iterations 100
+
+## teraz sprawdzamy stochastyczny beam search
+python scripts/main.py \
+  --input data/reconstruction_input.tsv \
+  --output results_max.json \
+  --task-mode constrained_recovery \
+  --models noadapters_model \
+  --optimizers beam_search_stochastic \
+  --interpreters saliency \
+  --iterations 100
+
+
 ```
 
+```bash
+# joanna 
+python scripts/main.py \
+  --input data/reconstruction_input.tsv \
+  --output data/results/results_joanna_annealing.json \
+  --task-mode constrained_recovery \
+  --models deepstarr \
+  --optimizers simulated_annealing \
+  --interpreters saliency \
+  --iterations 100
+```
+
+```bash
+# wykonanie właściwego run'a 
+## Joanna beam search 
+python scripts/main.py \
+  --input data/reconstruction_input.tsv \
+  --output data/results/results_joanna_beam.json \
+  --task-mode constrained_recovery \
+  --models deepstarr \
+  --optimizers beam_search \
+  --interpreters saliency \
+  --iterations 100 \
+
+## Ja 
+
+
+```
 
 ---
 

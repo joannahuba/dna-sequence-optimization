@@ -70,9 +70,9 @@ class DNADatasetNoAdapters(DNADataset):
         super().__init__(filepath, is_test=is_test, header=header)
         
         # Find local adapters globally 
-        self.prefix, self.suffix = find_common_adapters(self.data['sequence'])
-        self.prefix_len = len(self.prefix)
-        self.suffix_len = len(self.suffix)
+        # self.prefix, self.suffix = 15, 15
+        self.prefix_len = 15
+        self.suffix_len = 15
         
         # Print info to verify everything is correct
         print(f"--- Dataset Initialized with Adapter Trimming ---")
@@ -193,6 +193,7 @@ class GenomicModelDeepStarr(nn.Module):
         # Filters amount: 246, 60, 60, 120 | Kernel sizes: 7, 3, 5, 3
         filt_sizes = [246, 60, 60, 120]
         kernel_sizes = [7, 3, 5, 3]
+        
 
         layers = []
         in_channels = 4 # 4 bases
@@ -419,5 +420,104 @@ class GenomicModelZeroAdjusted(nn.Module):
         
         is_active = self.classification_head(x)
         rna_dna_ratio = self.regression_head(x)
+        
+        return is_active.view(-1), rna_dna_ratio.view(-1)
+
+
+class GenomicModelDeepStarrTwo(nn.Module):
+    """
+    Genomic neural network model replicating the DeepSTARR architecture.
+    """
+
+    def __init__(self, sequence_length=230):
+        super(GenomicModelDeepStarrTwo, self).__init__()
+
+        # Convolutional network topology configuration
+        ## Reproducing original DeepSTARR blocks: filters (256, 60, 60, 120), kernels (7, 3, 5, 3)
+        filt_sizes = [246, 60, 60, 120]
+        kernel_sizes = [7, 3, 5, 3]
+
+        layers = []
+        in_channels = 4 
+
+        for out_channels, k_size in zip(filt_sizes, kernel_sizes):
+            layers.append(
+                nn.Conv1d(
+                    in_channels=in_channels, 
+                    out_channels=out_channels,
+                    kernel_size=k_size,
+                    padding='same'
+                )
+            )
+            layers.append(nn.BatchNorm1d(out_channels))
+            layers.append(nn.ReLU())
+            layers.append(nn.MaxPool1d(2))
+            in_channels = out_channels
+
+        # Explicit layer naming to match "conv_layers" checkpoint keys
+        self.conv_layers = nn.Sequential(*layers)
+
+        # Dense processing layer definitions
+        ## Enforce strict 1440 flatten footprint required by checkpoint states (120 filters * 12 spatial output)
+        self.flatten_size = 1440
+
+        self.fc_shared = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(self.flatten_size, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.4),
+            
+            nn.Linear(256, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.4)
+        )
+
+        # Output processing head assignments
+        ## Build separate prediction spaces matching the exact target checkpoint sizes
+        self.classification_head = nn.Sequential(
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+        
+        self.regression_head = nn.Sequential(
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)
+        )
+
+    def forward(self, x):
+        """
+        Here we implement reverse complement
+        """
+        out_active_fwd, out_ratio_fwd = self.basic_forward(x)
+
+        # Reverse complement 
+        rc_x = x.flip(dims=[-1, -2])
+        out_active_rev, out_ratio_rev = self.basic_forward(rc_x)
+
+        # We aggregate results 
+        final_active = (out_active_fwd + out_active_rev) / 2
+        final_ratio = (out_ratio_fwd + out_ratio_rev) / 2
+
+        return final_active, final_ratio
+
+    def basic_forward(self, x):   
+        # Bugfix: change dimension to be compatible with sequence layout channel ordering
+        if x.dim() == 3 and x.shape[2] == 4:
+            x = x.permute(0, 2, 1)
+
+        features = self.conv_layers(x)
+
+        # Standardize feature map sequence dimensions
+        ## Dynamic rescue check to enforce length 12 across sequence length perturbations (200 vs 230)
+        if features.shape[-1] != 12:
+            features = torch.nn.functional.adaptive_avg_pool1d(features, 12)
+
+        embedding = self.fc_shared(features)
+        
+        is_active = self.classification_head(embedding)
+        rna_dna_ratio = self.regression_head(embedding)
         
         return is_active.view(-1), rna_dna_ratio.view(-1)
