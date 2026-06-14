@@ -7,7 +7,7 @@ import torch
 from typing import Dict, List, Tuple, Any
 
 from .base_optimizer import BaseOptimizer
-from .utils.mutation_generator import MutationGenerator
+from ..utils.mutation_generator import MutationGenerator
 from ...utils.validator import SequenceValidator
 from ...utils.logger import get_custom_logger
 
@@ -61,7 +61,7 @@ class StochasticMetropolisOptimizer(BaseOptimizer):
         cooling_rate = config.get("cooling_rate", 0.985)
         
         search_state = {
-            "beam_width": 1,
+            "beam_width": 20,
             "candidates_per_parent": candidates_per_parent,
             "temperature": initial_temperature,
             "cooling_rate": cooling_rate,

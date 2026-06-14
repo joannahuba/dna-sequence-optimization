@@ -1,7 +1,6 @@
 # Heading 1 (Trajectory Orchestration Space)
 ## Module infrastructure imports, typing boundaries, tensor backends, and serialization tools
-import copy
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 import numpy as np
 import torch
 
@@ -39,128 +38,137 @@ class TrajectoryOrchestrator:
         self.optimizer = optimizer
         self.interpreter = interpreter
 
-    def _initialize_tracking_schema(self, registered_models: List[str]) -> Dict[str, Any]:
-        """
-        Resolves targeted tracking dictionary nodes based on the interpreter schema flags.
-
-        :param registered_models: List of available model identifiers inside the manager instance.
-        :type registered_models: List[str]
-        :return: Normalized layout configuration mapping tracking nodes dynamically.
-        :rtype: Dict[str, Any]
-        """
-        logger.debug("Resolving strategy layer metadata schema outputs.")
-        schema_meta = self.interpreter.resolve_output_schema(registered_models)
-        models_tracking_payload = {}
-        
-        # Schema distribution logic
-        ## Differentiate tracking structures for aggregate ensembles vs isolated models
-        if schema_meta.get("is_aggregated", False):
-            ### Execute Option B pathing: assign a unified key with explicit component lists
-            models_tracking_payload["aggregated_models"] = {
-                "model_config": {},
-                "evaluated_models": registered_models,
-                "steps": []
-            }
-        else:
-            ### Execute discrete pathing: map each model architecture to its own top-level profile key
-            for model_name in registered_models:
-                models_tracking_payload[model_name] = {
-                    "model_config": {},
-                    "evaluated_models": [model_name],
-                    "steps": []
-                }
-                
-        return models_tracking_payload
-
     def run_trajectory(
         self,
         initial_sequence: str,
-        runtime_context: Dict[str, Any]
+        runtime_context: Dict[str, Any],
+        target_model: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Drives the iterative optimization timeline for a single sequence,
-        converting text arrays into tensor representations for batch processing.
+        Routes execution paths to specialized trajectory sub-methods based on aggregation schemas.
 
         :param initial_sequence: Starting wild-type or seed nucleotide sequence string.
         :type initial_sequence: str
         :param runtime_context: Unified configuration payload passed from the orchestration layer.
         :type runtime_context: Dict[str, Any]
+        :param target_model: Explicit identifier specifying an isolated model execution target.
+        :type target_model: Optional[str]
         :return: Structured nested map compiling execution metrics matching the JSON specification.
         :rtype: Dict[str, Any]
         """
-        logger.info("Launching isolated execution track for target sequence profile.")
+        if target_model is not None:
+            return self._run_discrete_trajectory(initial_sequence, runtime_context, target_model)
+        return self._run_aggregated_trajectory(initial_sequence, runtime_context)
+
+    def _run_aggregated_trajectory(
+        self,
+        initial_sequence: str,
+        runtime_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Drives iterative multi-model ensemble trajectories with persistent memory residents.
+
+        :param initial_sequence: Starting wild-type or seed nucleotide sequence string.
+        :type initial_sequence: str
+        :param runtime_context: Unified configuration payload passed from the orchestration layer.
+        :type runtime_context: Dict[str, Any]
+        :return: Aggregated tracking configuration layout containing step traces.
+        :rtype: Dict[str, Any]
+        """
+        logger.info("Initiating ensemble execution track.")
         optimizer_config = runtime_context.get("optimizer_config", {})
         method = runtime_context.get("method", "optimization")
         iterations = optimizer_config.get("iterations", 50)
-        
+        device = self.model_manager.get_device()
         registered_models = self.model_manager.get_model_names()
-        models_tracking_payload = self._initialize_tracking_schema(registered_models)
-        
-        # State instantiation phase
-        ## Initialize persistence dictionaries tracking the exploration search state
+
+        # Schema structural allocation
+        models_tracking_payload = {
+            "aggregated_models": {
+                "model_config": {},
+                "evaluated_models": registered_models,
+                "steps": []
+            }
+        }
+
+        # High-efficiency pre-loading phase
+        ## Push all registered models to GPU memory once to eliminate pipeline shuffling bottlenecks
+        for model_name in registered_models:
+            meta = self.model_manager.get_models()[model_name]
+            meta["model"].to(device)
+            meta["model"].eval()
+
         search_state = self.optimizer.initialize_search_state(initial_sequence, optimizer_config)
         current_sequence = initial_sequence
 
-        # Time step integration loop
-        ## Drive continuous optimization trajectories across the defined iterations timeline
+        # Evolutionary optimization timeline loop
         for it in range(iterations):
-            logger.info("Executing trajectory step evaluation cycle: %s / %s", it + 1, iterations)
+            ## Apply temporal sampling constraints to the iteration progress log tracker
+            if it < 5 or (it + 1) % 5 == 0:
+                logger.info("Aggregated trajectory execution cycle: %s / %s", it + 1, iterations)
             
-            # Batch evaluation setup
-            ## Compute unified raw sequence predictions for all models to prevent redundant processing overhead
             prediction_map = self.model_manager.predict_sequences([current_sequence])
-            
-            ## Resolve active tensor computational device execution targets from the model manager
-            device = self.model_manager.get_device()
             X_encoded = encode_batch([current_sequence])
             tensor_x = torch.tensor(X_encoded, dtype=torch.float32, device=device)
             
             global_importance_maps = {}
-            
-            # Schema tracking loop
-            ## Iterate over configured target key blocks defined by the architectural payload schema
-            # TODO it is not optimal w can write it in to separate loops (one for aggregated and on for separate) 
-            # ładowaś wszystkich na raz się boje ... .
-            for target_key, target_meta in models_tracking_payload.items():
-                models_predictions = {}
-                models_attributions = {}
+            models_predictions = {}
+            models_attributions = {}
+
+            ## Parallel batch execution over model weights residing on device cache
+            for model_name in registered_models:
+                model_instance = self.model_manager.get_models()[model_name]["model"]
+                attribution_matrix = self.interpreter.compute_tensor_attribution(tensor_x, model_instance)
                 
-                ## Process individual evaluated models assigned to the current tracking target
-                for model_name in target_meta["evaluated_models"]:
-                    meta = self.model_manager.get_models()[model_name]
-                    model_instance = meta["model"]
-                    
-                    ### Synchronize target model architecture with the designated active compute device
-                    model_instance.to(device)
-                    
-                    ### Extract position attribution scores via the strategy execution layer
-                    attribution_matrix = self.interpreter.compute_tensor_attribution(tensor_x, model_instance)
-                    
-                    models_predictions[model_name] = prediction_map[current_sequence].get(model_name, 0.0)
-                    models_attributions[model_name] = attribution_matrix
-                    global_importance_maps[model_name] = attribution_matrix
-                    
-                ### Compile execution step records directly into the active trajectory tracking array
-                step_record = {
-                    "iteration": it,
-                    "current_sequence": current_sequence,
-                    "models_predictions": models_predictions,
-                    "models_attributions": models_attributions
+                models_predictions[model_name] = prediction_map[current_sequence].get(model_name, 0.0)
+                models_attributions[model_name] = attribution_matrix
+                global_importance_maps[model_name] = attribution_matrix
+
+            # Objective cost score computation
+            ## Calculate explicit mathematical fitness for the current target sequence state[cite: 31]
+            target_expression = runtime_context.get("target_expression", 0.0)
+            penalty_std = optimizer_config.get("penalty_std", 0.2)
+            
+            current_scores = np.array(list(models_predictions.values()))
+            current_mean = float(current_scores.mean()) if current_scores.size > 0 else 0.0
+            current_std = float(current_scores.std()) if current_scores.size > 0 else 0.0
+            
+            if method == "reconstruction":
+                current_cost_score = -abs(current_mean - target_expression)
+            else:
+                current_cost_score = current_mean - penalty_std * current_std
+
+            ## Hot-fix initialization placeholder inside the active beam array at iteration 0[cite: 31]
+            if search_state["active_beam"][0][0] == -float("inf"):
+                search_state["active_beam"][0] = (current_cost_score, search_state["active_beam"][0][1], search_state["active_beam"][0][2])
+
+            # Beam lineage metadata tracking
+            ## Extract and serialize the active population layout from the search state
+            beam_population_log = [
+                {
+                    "score": float(node_score),
+                    "sequence": node_seq,
+                    "mutated_positions": list(node_mut_set)
                 }
-                target_meta["steps"].append(step_record)
-            
-            # Sequence variation tracking
-            ## Suggest validation-filtered mutant candidate lists based on computed weights
+                for node_score, node_seq, node_mut_set in search_state.get("active_beam", [])
+            ]
+
+            step_record = {
+                "iteration": it,
+                "current_sequence": current_sequence,
+                "score": current_cost_score,
+                "models_predictions": models_predictions,
+                "models_attributions": models_attributions,
+                "beam_population": beam_population_log
+            }
+            models_tracking_payload["aggregated_models"]["steps"].append(step_record)
+
             candidate_pool = self.optimizer.generate_candidate_pool(search_state, global_importance_maps)
-            
             if not candidate_pool:
-                logger.info("Candidate generator space returned empty pool. Terminating search early.")
+                logger.info("Candidate generator returned empty pool. Halting execution path.")
                 break
-                
-            ## Evaluate fitness rankings for candidate variants in a unified batch operation
+
             scored_candidates = []
-            
-            ## Fetch high-throughput raw predictions from the manager container
             raw_predictions = self.model_manager.predict_sequences(candidate_pool)
             target_expression = runtime_context.get("target_expression", 0.0)
             penalty_std = optimizer_config.get("penalty_std", 0.2)
@@ -170,19 +178,146 @@ class TrajectoryOrchestrator:
                 mean_score = float(scores.mean())
                 std_score = float(scores.std())
                 
-                ### Apply runtime context branches to determine structural fitness
-                #TODO - add scoring functions moduel
                 if method == "reconstruction":
                     fitness_score = -abs(mean_score - target_expression)
                 else:
                     fitness_score = mean_score - penalty_std * std_score
-                    
                 scored_candidates.append((candidate, fitness_score))
-                
-            ## Apply selection filters to transition the internal search parameters
+
             search_state = self.optimizer.update_generation_step(search_state, scored_candidates)
             current_sequence = search_state.get("best_sequence", current_sequence)
 
-        return {
-            "models": models_tracking_payload
+            # Invariant Memory Cleanup Block
+            ## Release reference blocks and flush PyTorch autograd allocation caches to prevent OOM anomalies
+            del tensor_x
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        return {"models": models_tracking_payload}
+
+    def _run_discrete_trajectory(
+        self,
+        initial_sequence: str,
+        runtime_context: Dict[str, Any],
+        target_model: str
+    ) -> Dict[str, Any]:
+        """
+        Drives iterative standalone trajectories optimized for an isolated network model.
+
+        :param initial_sequence: Starting wild-type or seed nucleotide sequence string.
+        :type initial_sequence: str
+        :param runtime_context: Unified configuration payload passed from the orchestration layer.
+        :type runtime_context: Dict[str, Any]
+        :param target_model: Explicit identifier of the single model targeted for sequence mutations.
+        :type target_model: str
+        :return: Discrete tracking configuration layout containing step traces for the target key.
+        :rtype: Dict[str, Any]
+        """
+        logger.info("Initiating discrete model isolated execution track.")
+        optimizer_config = runtime_context.get("optimizer_config", {})
+        method = runtime_context.get("method", "optimization")
+        iterations = optimizer_config.get("iterations", 50)
+        device = self.model_manager.get_device()
+
+        # Schema structural allocation for single key footprint optimization
+        models_tracking_payload = {
+            target_model: {
+                "model_config": {},
+                "evaluated_models": [target_model],
+                "steps": []
+            }
         }
+
+        # Single-model memory retention setup
+        ## Lock the single target architecture into GPU memory once before starting iteration tracks
+        meta = self.model_manager.get_models()[target_model]
+        model_instance = meta["model"]
+        model_instance.to(device)
+        model_instance.eval()
+
+        search_state = self.optimizer.initialize_search_state(initial_sequence, optimizer_config)
+        current_sequence = initial_sequence
+
+        # Evolutionary optimization timeline loop
+        for it in range(iterations):
+            ## Apply temporal sampling constraints to the iteration progress log tracker
+            if it < 5 or (it + 1) % 5 == 0:
+                logger.info("Discrete trajectory execution cycle for model %s: %s / %s", target_model, it + 1, iterations)
+            
+            # Direct single-model optimization tracking pass
+            prediction_map = self.model_manager.predict_sequences([current_sequence], model_names=target_model)
+            X_encoded = encode_batch([current_sequence])
+            tensor_x = torch.tensor(X_encoded, dtype=torch.float32, device=device)
+            
+            attribution_matrix = self.interpreter.compute_tensor_attribution(tensor_x, model_instance)
+            
+            # Package attribution metrics under target model name to match optimizer interface signatures
+            global_importance_maps = {target_model: attribution_matrix}
+            models_predictions = {target_model: prediction_map[current_sequence].get(target_model, 0.0)}
+            models_attributions = {target_model: attribution_matrix}
+
+            # Objective cost score computation
+            ## Calculate explicit mathematical fitness for the single isolated target model[cite: 31]
+            target_expression = runtime_context.get("target_expression", 0.0)
+            current_model_score = float(models_predictions[target_model])
+            
+            if method == "reconstruction":
+                current_cost_score = -abs(current_model_score - target_expression)
+            else:
+                current_cost_score = current_model_score
+
+            ## Hot-fix initialization placeholder inside the active beam array at iteration 0[cite: 31]
+            if search_state["active_beam"][0][0] == -float("inf"):
+                search_state["active_beam"][0] = (current_cost_score, search_state["active_beam"][0][1], search_state["active_beam"][0][2])
+
+            # Beam lineage metadata tracking
+            ## Extract and serialize the active population layout from the search state
+            beam_population_log = [
+                {
+                    "score": float(node_score),
+                    "sequence": node_seq,
+                    "mutated_positions": list(node_mut_set)
+                }
+                for node_score, node_seq, node_mut_set in search_state.get("active_beam", [])
+            ]
+
+            step_record = {
+                "iteration": it,
+                "current_sequence": current_sequence,
+                "score": current_cost_score,
+                "models_predictions": models_predictions,
+                "models_attributions": models_attributions,
+                "beam_population": beam_population_log
+            }
+            models_tracking_payload[target_model]["steps"].append(step_record)
+
+            candidate_pool = self.optimizer.generate_candidate_pool(search_state, global_importance_maps)
+            if not candidate_pool:
+                logger.info("Candidate generator returned empty pool. Halting discrete track.")
+                break
+
+            scored_candidates = []
+            # Compute fast batch predictions targeted strictly to our model profile
+            raw_predictions = self.model_manager.predict_sequences(candidate_pool, model_names=target_model)
+            target_expression = runtime_context.get("target_expression", 0.0)
+
+            for candidate in candidate_pool:
+                # Extract the single scalar fitness score directly without cross-model standard deviations
+                model_score = float(raw_predictions[candidate].get(target_model, 0.0))
+                
+                if method == "reconstruction":
+                    fitness_score = -abs(model_score - target_expression)
+                else:
+                    fitness_score = model_score
+                scored_candidates.append((candidate, fitness_score))
+
+            search_state = self.optimizer.update_generation_step(search_state, scored_candidates)
+            current_sequence = search_state.get("best_sequence", current_sequence)
+
+            # Invariant Memory Cleanup Block
+            ## Release reference blocks and flush PyTorch autograd allocation caches to prevent OOM anomalies
+            del tensor_x
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        return {"models": models_tracking_payload}

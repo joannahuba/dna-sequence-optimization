@@ -5,8 +5,8 @@ import os
 import time
 from typing import Dict, List, Optional, Any, Literal
 
-from ..models.model_manager import ModelManager
 from .optimization_orchestrator import TrajectoryOrchestrator
+from ..models.model_manager import ModelManager
 from ..utils.logger import get_custom_logger
 
 # Instantiation Protocol
@@ -100,6 +100,7 @@ class SequencePredictorModelWrapper:
         logger.info("Initializing sequence maximization optimization pipeline.")
         override_config = override_config or {}
         total_sequences = len(self.sequences)
+        registered_models = self.model_manager.get_model_names()
 
         # Processing loop
         ## Process target sequences sequentially
@@ -132,7 +133,7 @@ class SequencePredictorModelWrapper:
                 ## Execute active molecular attribution interpreters inside the optimizer path
                 for interpreter in self.interpreters_list:
                     interpreter_name = interpreter.__class__.__name__
-                    interpreter_payload = optimizer_payload.get("interpreters", {}).get(interpreter_name, {})
+                    interpreter_payload = override_config.get("interpreters", {}).get(interpreter_name, {})
                     interpreter_config = interpreter_payload.get("interpreter_config", {})
 
                     ### Inject structural boundary controls and maximization flags into context
@@ -145,25 +146,43 @@ class SequencePredictorModelWrapper:
                         "suffix_len": self.suffix_len
                     }
 
-                    ### Instantiate the functional orchestrator and drive execution trajectories
                     orchestrator = TrajectoryOrchestrator(
                         model_manager=self.model_manager,
                         optimizer=optimizer,
                         interpreter=interpreter
                     )
-                    
-                    trajectory_results = orchestrator.run_trajectory(
-                        initial_sequence=seq,
-                        runtime_context=runtime_context
-                    )
 
+                    ### Inspect output schema to determine structural path distribution
+                    schema_meta = interpreter.resolve_output_schema(registered_models)
+                    
                     self.output[seq_id]["optimizers"][optimizer_name]["interpreters"][interpreter_name] = {
                         "interpreter_config": interpreter_config,
-                        "models": trajectory_results.get("models", {})
+                        "models": {}
                     }
 
-                    ### Commit active structural state data directly to the disk target
-                    self._incremental_checkpoint(output_path)
+                    if schema_meta.get("is_aggregated", False):
+                        #### Execute unified ensemble execution path
+                        trajectory_results = orchestrator.run_trajectory(
+                            initial_sequence=seq,
+                            runtime_context=runtime_context,
+                            target_model=None
+                        )
+                        self.output[seq_id]["optimizers"][optimizer_name]["interpreters"][interpreter_name]["models"] = trajectory_results.get("models", {})
+                        self._incremental_checkpoint(output_path)
+                    else:
+                        #### Execute discrete model execution tracks independently over structural keys
+                        for model_name in registered_models:
+                            logger.info("Launching isolated model track optimization loop for model: %s", model_name)
+                            trajectory_results = orchestrator.run_trajectory(
+                                initial_sequence=seq,
+                                runtime_context=runtime_context,
+                                target_model=model_name
+                            )
+                            ### Append the model standalone history node directly into the primary tracking map
+                            self.output[seq_id]["optimizers"][optimizer_name]["interpreters"][interpreter_name]["models"][model_name] = trajectory_results["models"][model_name]
+                            
+                            #### Flush checkpoint records incrementally immediately after each individual model trajectory ends
+                            self._incremental_checkpoint(output_path)
 
             elapsed = time.time() - start_time
             logger.info("Completed tracking operations for sequence %s in %2.f seconds.", seq_id, elapsed)
@@ -192,6 +211,7 @@ class SequencePredictorModelWrapper:
         logger.info("Initializing constrained expression reconstruction pipeline.")
         override_config = override_config or {}
         total_sequences = len(self.sequences)
+        registered_models = self.model_manager.get_model_names()
 
         # Processing loop
         ## Process target sequences sequentially
@@ -226,7 +246,7 @@ class SequencePredictorModelWrapper:
                 ## Execute active molecular attribution interpreters inside the optimizer path
                 for interpreter in self.interpreters_list:
                     interpreter_name = interpreter.__class__.__name__
-                    interpreter_payload = optimizer_payload.get("interpreters", {}).get(interpreter_name, {})
+                    interpreter_payload = override_config.get("interpreters", {}).get(interpreter_name, {})
                     interpreter_config = interpreter_payload.get("interpreter_config", {})
 
                     ### Inject strict mathematical targeting limits and expression requirements
@@ -241,25 +261,39 @@ class SequencePredictorModelWrapper:
                         "suffix_len": self.suffix_len
                     }
 
-                    ### Instantiate the functional orchestrator and drive execution trajectories
                     orchestrator = TrajectoryOrchestrator(
                         model_manager=self.model_manager,
                         optimizer=optimizer,
                         interpreter=interpreter
                     )
                     
-                    trajectory_results = orchestrator.run_trajectory(
-                        initial_sequence=seq,
-                        runtime_context=runtime_context
-                    )
-
+                    schema_meta = interpreter.resolve_output_schema(registered_models)
+                    
                     self.output[seq_id]["optimizers"][optimizer_name]["interpreters"][interpreter_name] = {
                         "interpreter_config": interpreter_config,
-                        "models": trajectory_results.get("models", {})
+                        "models": {}
                     }
 
-                    ### Commit active structural state data directly to the disk target
-                    self._incremental_checkpoint(output_path)
+                    if schema_meta.get("is_aggregated", False):
+                        #### Execute unified ensemble execution path
+                        trajectory_results = orchestrator.run_trajectory(
+                            initial_sequence=seq,
+                            runtime_context=runtime_context,
+                            target_model=None
+                        )
+                        self.output[seq_id]["optimizers"][optimizer_name]["interpreters"][interpreter_name]["models"] = trajectory_results.get("models", {})
+                        self._incremental_checkpoint(output_path)
+                    else:
+                        #### Execute discrete model execution tracks independently over structural keys
+                        for model_name in registered_models:
+                            logger.info("Launching isolated model track reconstruction loop for model: %s", model_name)
+                            trajectory_results = orchestrator.run_trajectory(
+                                initial_sequence=seq,
+                                runtime_context=runtime_context,
+                                target_model=model_name
+                            )
+                            self.output[seq_id]["optimizers"][optimizer_name]["interpreters"][interpreter_name]["models"][model_name] = trajectory_results["models"][model_name]
+                            self._incremental_checkpoint(output_path)
 
             elapsed = time.time() - start_time
             logger.info("Completed reconstruction operations for sequence %s in %2.f seconds.", seq_id, elapsed)
