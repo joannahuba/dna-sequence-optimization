@@ -5,6 +5,7 @@ import numpy as np
 import torch
 
 from ..models.model_manager import ModelManager
+from ..loss_functions import BaseLossObjective
 from ..utils.preprocessing import encode_batch
 from ..utils.logger import get_custom_logger
 
@@ -22,7 +23,8 @@ class TrajectoryOrchestrator:
         self,
         model_manager: ModelManager,
         optimizer: Any,
-        interpreter: Any
+        interpreter: Any,
+        objective: BaseLossObjective
     ):
         """
         Initializes the dynamic trajectory execution engine.
@@ -33,10 +35,13 @@ class TrajectoryOrchestrator:
         :type optimizer: Any
         :param interpreter: Decoupled functional matrix attribution strategy.
         :type interpreter: Any
+        :param objective: Injected loss function contract decoupling state evaluation logic.
+        :type objective: BaseLossObjective
         """
         self.model_manager = model_manager
         self.optimizer = optimizer
         self.interpreter = interpreter
+        self.objective = objective
 
     def run_trajectory(
         self,
@@ -77,7 +82,6 @@ class TrajectoryOrchestrator:
         """
         logger.info("Initiating ensemble execution track.")
         optimizer_config = runtime_context.get("optimizer_config", {})
-        method = runtime_context.get("method", "optimization")
         iterations = optimizer_config.get("iterations", 50)
         device = self.model_manager.get_device()
         registered_models = self.model_manager.get_model_names()
@@ -103,9 +107,7 @@ class TrajectoryOrchestrator:
 
         # Evolutionary optimization timeline loop
         for it in range(iterations):
-            ## Apply temporal sampling constraints to the iteration progress log tracker
-            if it < 5 or (it + 1) % 5 == 0:
-                logger.info("Aggregated trajectory execution cycle: %s / %s", it + 1, iterations)
+            logger.info("Aggregated trajectory execution cycle: %s / %s", it + 1, iterations)
             
             prediction_map = self.model_manager.predict_sequences([current_sequence])
             X_encoded = encode_batch([current_sequence])
@@ -118,48 +120,21 @@ class TrajectoryOrchestrator:
             ## Parallel batch execution over model weights residing on device cache
             for model_name in registered_models:
                 model_instance = self.model_manager.get_models()[model_name]["model"]
-                attribution_matrix = self.interpreter.compute_tensor_attribution(tensor_x, model_instance)
+                attribution_matrix = self.interpreter.compute_tensor_attribution(tensor_x, model_instance, runtime_context)
                 
                 models_predictions[model_name] = prediction_map[current_sequence].get(model_name, 0.0)
                 models_attributions[model_name] = attribution_matrix
                 global_importance_maps[model_name] = attribution_matrix
 
-            # Objective cost score computation
-            ## Calculate explicit mathematical fitness for the current target sequence state[cite: 31]
-            target_expression = runtime_context.get("target_expression", 0.0)
-            penalty_std = optimizer_config.get("penalty_std", 0.2)
-            
-            current_scores = np.array(list(models_predictions.values()))
-            current_mean = float(current_scores.mean()) if current_scores.size > 0 else 0.0
-            current_std = float(current_scores.std()) if current_scores.size > 0 else 0.0
-            
-            if method == "reconstruction":
-                current_cost_score = -abs(current_mean - target_expression)
-            else:
-                current_cost_score = current_mean - penalty_std * current_std
-
-            ## Hot-fix initialization placeholder inside the active beam array at iteration 0[cite: 31]
-            if search_state["active_beam"][0][0] == -float("inf"):
-                search_state["active_beam"][0] = (current_cost_score, search_state["active_beam"][0][1], search_state["active_beam"][0][2])
-
-            # Beam lineage metadata tracking
-            ## Extract and serialize the active population layout from the search state
-            beam_population_log = [
-                {
-                    "score": float(node_score),
-                    "sequence": node_seq,
-                    "mutated_positions": list(node_mut_set)
-                }
-                for node_score, node_seq, node_mut_set in search_state.get("active_beam", [])
-            ]
-
+            # Extended state logging block
+            ## Capture heuristic population matrices and weight configurations directly from search_state
             step_record = {
                 "iteration": it,
                 "current_sequence": current_sequence,
-                "score": current_cost_score,
                 "models_predictions": models_predictions,
                 "models_attributions": models_attributions,
-                "beam_population": beam_population_log
+                "beam_population": search_state.get("beam_population", []),
+                "weights": search_state.get("weights", {})
             }
             models_tracking_payload["aggregated_models"]["steps"].append(step_record)
 
@@ -170,18 +145,17 @@ class TrajectoryOrchestrator:
 
             scored_candidates = []
             raw_predictions = self.model_manager.predict_sequences(candidate_pool)
-            target_expression = runtime_context.get("target_expression", 0.0)
-            penalty_std = optimizer_config.get("penalty_std", 0.2)
 
+            ## Evaluate fitness using polymorphically isolated evaluation metrics
             for candidate in candidate_pool:
-                scores = np.array(list(raw_predictions[candidate].values()))
-                mean_score = float(scores.mean())
-                std_score = float(scores.std())
+                scores = raw_predictions[candidate]
                 
-                if method == "reconstruction":
-                    fitness_score = -abs(mean_score - target_expression)
-                else:
-                    fitness_score = mean_score - penalty_std * std_score
+                ### Delegate fitness ranking to the injected objective function contract
+                fitness_score = self.objective.evaluate_numpy_fitness(
+                    predictions=scores,
+                    sequence=candidate,
+                    metadata=runtime_context
+                )
                 scored_candidates.append((candidate, fitness_score))
 
             search_state = self.optimizer.update_generation_step(search_state, scored_candidates)
@@ -215,7 +189,6 @@ class TrajectoryOrchestrator:
         """
         logger.info("Initiating discrete model isolated execution track.")
         optimizer_config = runtime_context.get("optimizer_config", {})
-        method = runtime_context.get("method", "optimization")
         iterations = optimizer_config.get("iterations", 50)
         device = self.model_manager.get_device()
 
@@ -240,54 +213,30 @@ class TrajectoryOrchestrator:
 
         # Evolutionary optimization timeline loop
         for it in range(iterations):
-            ## Apply temporal sampling constraints to the iteration progress log tracker
-            if it < 5 or (it + 1) % 5 == 0:
-                logger.info("Discrete trajectory execution cycle for model %s: %s / %s", target_model, it + 1, iterations)
+            logger.info("Discrete trajectory execution cycle for model %s: %s / %s", target_model, it + 1, iterations)
             
             # Direct single-model optimization tracking pass
             prediction_map = self.model_manager.predict_sequences([current_sequence], model_names=target_model)
             X_encoded = encode_batch([current_sequence])
             tensor_x = torch.tensor(X_encoded, dtype=torch.float32, device=device)
             
-            attribution_matrix = self.interpreter.compute_tensor_attribution(tensor_x, model_instance)
+            attribution_matrix = self.interpreter.compute_tensor_attribution(tensor_x, model_instance, runtime_context)
             
             # Package attribution metrics under target model name to match optimizer interface signatures
             global_importance_maps = {target_model: attribution_matrix}
+            
             models_predictions = {target_model: prediction_map[current_sequence].get(target_model, 0.0)}
             models_attributions = {target_model: attribution_matrix}
 
-            # Objective cost score computation
-            ## Calculate explicit mathematical fitness for the single isolated target model[cite: 31]
-            target_expression = runtime_context.get("target_expression", 0.0)
-            current_model_score = float(models_predictions[target_model])
-            
-            if method == "reconstruction":
-                current_cost_score = -abs(current_model_score - target_expression)
-            else:
-                current_cost_score = current_model_score
-
-            ## Hot-fix initialization placeholder inside the active beam array at iteration 0[cite: 31]
-            if search_state["active_beam"][0][0] == -float("inf"):
-                search_state["active_beam"][0] = (current_cost_score, search_state["active_beam"][0][1], search_state["active_beam"][0][2])
-
-            # Beam lineage metadata tracking
-            ## Extract and serialize the active population layout from the search state
-            beam_population_log = [
-                {
-                    "score": float(node_score),
-                    "sequence": node_seq,
-                    "mutated_positions": list(node_mut_set)
-                }
-                for node_score, node_seq, node_mut_set in search_state.get("active_beam", [])
-            ]
-
+            # Extended state logging block
+            ## Capture heuristic population matrices and weight configurations directly from search_state
             step_record = {
                 "iteration": it,
                 "current_sequence": current_sequence,
-                "score": current_cost_score,
                 "models_predictions": models_predictions,
                 "models_attributions": models_attributions,
-                "beam_population": beam_population_log
+                "beam_population": search_state.get("beam_population", []),
+                "weights": search_state.get("weights", {})
             }
             models_tracking_payload[target_model]["steps"].append(step_record)
 
@@ -299,16 +248,17 @@ class TrajectoryOrchestrator:
             scored_candidates = []
             # Compute fast batch predictions targeted strictly to our model profile
             raw_predictions = self.model_manager.predict_sequences(candidate_pool, model_names=target_model)
-            target_expression = runtime_context.get("target_expression", 0.0)
 
+            ## Evaluate fitness using polymorphically isolated evaluation metrics
             for candidate in candidate_pool:
-                # Extract the single scalar fitness score directly without cross-model standard deviations
-                model_score = float(raw_predictions[candidate].get(target_model, 0.0))
+                scores = raw_predictions[candidate]
                 
-                if method == "reconstruction":
-                    fitness_score = -abs(model_score - target_expression)
-                else:
-                    fitness_score = model_score
+                ### Delegate fitness ranking to the injected objective function contract
+                fitness_score = self.objective.evaluate_numpy_fitness(
+                    predictions=scores,
+                    sequence=candidate,
+                    metadata=runtime_context
+                )
                 scored_candidates.append((candidate, fitness_score))
 
             search_state = self.optimizer.update_generation_step(search_state, scored_candidates)
