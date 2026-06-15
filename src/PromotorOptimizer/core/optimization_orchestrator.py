@@ -127,14 +127,14 @@ class TrajectoryOrchestrator:
                 global_importance_maps[model_name] = attribution_matrix
 
             # Extended state logging block
-            ## Capture heuristic population matrices and weight configurations directly from search_state
+            ## Capture correct active beam allocations and track thermodynamic parameter cooling curves
             step_record = {
                 "iteration": it,
                 "current_sequence": current_sequence,
                 "models_predictions": models_predictions,
                 "models_attributions": models_attributions,
-                "beam_population": search_state.get("beam_population", []),
-                "weights": search_state.get("weights", {})
+                "beam_population": search_state.get("active_beam", []),
+                "temperature": search_state.get("temperature", 0.0)
             }
             models_tracking_payload["aggregated_models"]["steps"].append(step_record)
 
@@ -229,14 +229,16 @@ class TrajectoryOrchestrator:
             models_attributions = {target_model: attribution_matrix}
 
             # Extended state logging block
-            ## Capture heuristic population matrices and weight configurations directly from search_state
+            ## Capture correct active beam allocations and track thermodynamic parameter cooling curves
             step_record = {
                 "iteration": it,
                 "current_sequence": current_sequence,
                 "models_predictions": models_predictions,
                 "models_attributions": models_attributions,
-                "beam_population": search_state.get("beam_population", []),
-                "weights": search_state.get("weights", {})
+                "beam_population": search_state.get("active_beam", []),
+                "mutated_positions": search_state.get("mutated_positions_map", []),
+                "temperature": search_state.get("temperature", 0.0)
+
             }
             models_tracking_payload[target_model]["steps"].append(step_record)
 

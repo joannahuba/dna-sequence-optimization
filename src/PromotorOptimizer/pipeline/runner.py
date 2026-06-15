@@ -80,14 +80,28 @@ class PipelineRunner:
         ## Process individual lines dynamically to extract sequence-specific parameters into metadata
         for _, row in df.iterrows():
             ### Map positional indices directly to protect against missing header structures
-            seq_id = str(row.iloc[0])
-            sequence_str = str(row.iloc[1])
+            seq_id = str(row.iloc[0]).strip()
+            
+            ### Detect and skip header row dynamically to handle files containing descriptive column names
+            if seq_id.lower() in ["id", "sequence_id", "seq_id", "name"] or str(row.iloc[1]).lower() in ["sequence", "seq"]:
+                logger.info("Detected and skipped file header row tracking label fields: %s", seq_id)
+                continue
+                
+            sequence_str = str(row.iloc[1]).strip()
             
             ### Safely cast sequence-specific mutation budgets if present in the data row
-            mutation_budget = int(row.iloc[2]) if len(row) > 2 and pd.notna(row.iloc[2]) else config.mutation_budget
+            try:
+                mutation_budget = int(row.iloc[2]) if len(row) > 2 and pd.notna(row.iloc[2]) else config.mutation_budget
+            except ValueError as val_err:
+                logger.error("Failed to parse mutation budget numeric parameter from row entry: %s", row.iloc[2], exc_info=True)
+                raise val_err
             
-            ### Safely cast sequence-specific target baseline scores (e.g., original activity) if provided
-            target_value = float(row.iloc[3]) if len(row) > 3 and pd.notna(row.iloc[3]) else None
+            ### Safely cast sequence-specific target baseline scores if provided
+            try:
+                target_value = float(row.iloc[3]) if len(row) > 3 and pd.notna(row.iloc[3]) else None
+            except ValueError as val_err:
+                logger.error("Failed to parse baseline target score evaluation numeric parameter from row entry: %s", row.iloc[3], exc_info=True)
+                raise val_err
 
             self.sequences[seq_id] = {
                 "sequence": sequence_str,
@@ -121,10 +135,9 @@ class PipelineRunner:
 
     def run(self, runtime_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Coordinates the continuous processing loops across sequence targets, passing down
-        the optional runtime parameter dictionaries containing configuration blocks.
+        Coordinates the continuous processing loops across sequence targets.
 
-        :param runtime_overrides: Master configuration block mapping runtime fields (e.g., optimizer_config).
+        :param runtime_overrides: Master configuration block mapping runtime fields.
         :type runtime_overrides: dict, optional
         :return: Map structure compiling execution data tracking elements.
         :rtype: dict
