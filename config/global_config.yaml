@@ -1,0 +1,18 @@
+# Global environment and biological architecture constraints
+global_seed: 42
+
+# Host filesystem data routing paths
+paths:
+  input_directory: "data/preprocessed"
+  checkpoint_directory: "data/checkpoints"
+  results_directory: "data/results"
+
+# Standard nucleotide validation space thresholds
+default_validation_config:
+  max_homopolymer_at: 10
+  max_homopolymer_gc: 7
+  gc_percent_range:
+    - 0.25
+    - 0.65
+  min_length: 230
+  max_length: 230
