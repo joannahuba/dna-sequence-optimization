@@ -54,14 +54,14 @@ To achieve this, we have developed a modular, structured library architecture th
 ### Description
 
 The complete system documentation is decoupled across specialized categorical subdirectories inside the docs/ workspace:
-- [docs/approach/](./docs/approach/promotors_introduction_and_model_justification.md): Biological context, enhancer recovery principles, and rationale for using deep learning networks as target simulators.
+- [docs/approach/](./docs/approach/promotors_introduction_and_model_justification.md): (#TODO - uzupełnic ) Biological context, enhancer recovery principles, and rationale for using deep learning networks as target simulators.
 - [docs/architecture/](./docs/architecture/README.md): Architectural diagrams, module descriptions, class registry configurations, and workflow execution blueprints.
 - [docs/theory/](./docs/theory/README.md): Mathematical formalizations of local sensitivity maps, integrated path gradients, and stochastically cooled search heuristics.
 - [docs/how_to/](./docs/how_to/snakemake_reproducibility.md): Execution manual for cluster reproducibility using Snakemake pipeline parameter
 
 ### Table of contents
 
-#TODO - insert table of contents fo all docs 
+#TODO - insert table of contents fo all docs (later) 
 
 
 
