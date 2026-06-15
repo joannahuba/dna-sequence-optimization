@@ -1,0 +1,59 @@
+# Heading 1 (Experiment 02 - Broad GC Tolerance Reconstruction Track)
+## Target evolutionary objective configuration mapping
+objective: "reconstruction_base"
+objective_config:
+  penalty_std: 0.2
+
+# Target input file boundaries
+input_files:
+  - "reconstruction_input_3.tsv"
+
+# Computational sequence transformation hyper-parameters
+iterations: 40
+mutation_budget: 40
+
+# Structural component orchestration list
+models:
+  - "original_modified"
+  - "deepstarr"
+  - "deepstarr_second"
+optimizers:
+  - "beam_search"
+  - "beam_stochastic_mh"
+  - "beam_search_stochastic_boltzman"
+interpreters:
+  - "saliency"
+  - "mutagenesis"
+  - "integrated_gradients"
+
+# Validation parameters with relaxed GC constraints
+validation_config:
+  max_homopolymer_at: 10
+  max_homopolymer_gc: 10
+  gc_percent_range:
+    - 0.2
+    - 0.8
+  min_length: 230
+  max_length: 230
+
+# Specific parameter overrides mapped by class names
+optimizer_overrides:
+  BeamSearchOptimizer:
+    beam_width: 30
+    top_k_positions: 40
+  StochasticMetropolisOptimizer:
+    candidates_per_parent: 10
+    initial_temperature: 0.8
+    cooling_rate: 0.985
+  StochasticBeamSearchBoltzmann:
+    beam_width: 30
+    candidates_per_parent: 10
+    initial_temperature: 0.15
+    cooling_rate: 0.985
+
+interpreter_overrides:
+  SaliencyInterpreter: {}
+  InSilicoMutagenesis:
+    chunk_size: 256
+  IntegratedGradientsStrategy:
+    steps: 30

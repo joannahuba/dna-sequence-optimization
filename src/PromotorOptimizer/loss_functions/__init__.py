@@ -1,0 +1,3 @@
+from .strategies.base_loss_function import BaseLossObjective
+from .strategies.reconstruction_loss_basic import ReconstructionLossObjective
+from .strategies.optimization_loss_basic import OptimizationLossObjective
