@@ -1,17 +1,16 @@
-# Heading 1 (Experiment 02 - Broad GC Tolerance Reconstruction Track)
+# Heading 1 (Experiment 01 - Standard Reconstruction Track)
 ## Target evolutionary objective configuration mapping
-# RUN : snakemake -s workflow/Snakefile.smk data/results/exp02_reconstruction_3_base/reconstruction_input_3_trajectory.json --cores 1
 objective: "reconstruction_base"
 objective_config:
   penalty_std: 0.2
 
 # Target input file boundaries
 input_files:
-  - "reconstruction_input_3.tsv"
+  - "reconstruction_input_1_2.tsv"
 
 # Computational sequence transformation hyper-parameters
-iterations: 23
-mutation_budget: 20
+iterations: 18
+mutation_budget: 16
 
 # Structural component orchestration list
 models:
@@ -27,13 +26,13 @@ interpreters:
   - "mutagenesis"
   - "integrated_gradients"
 
-# Validation parameters with relaxed GC constraints
+# Validation parameters for biological compliance evaluation
 validation_config:
-  max_homopolymer_at: 12
-  max_homopolymer_gc: 12
+  max_homopolymer_at: 10
+  max_homopolymer_gc: 7
   gc_percent_range:
-    - 0.1
-    - 0.9
+    - 0.25
+    - 0.65
   min_length: 230
   max_length: 230
 
