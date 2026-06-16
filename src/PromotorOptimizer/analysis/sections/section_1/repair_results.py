@@ -34,6 +34,3 @@ def truncate_sequences(df: pd.DataFrame) -> pd.DataFrame:
 
     return filtered_df
 
-# Execution
-## Apply truncation to target DataFrame
-df = truncate_sequences(df)
