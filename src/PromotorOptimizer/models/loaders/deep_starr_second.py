@@ -1,5 +1,3 @@
-# models/loaders/zero_loader.py
-
 import torch
 from ..architectures.genomic_model_zero import GenomicModelDeepStarrTwo
 
