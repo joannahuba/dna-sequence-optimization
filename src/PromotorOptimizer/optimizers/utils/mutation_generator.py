@@ -1,5 +1,3 @@
-# optimization/mutation_generator.py
-
 import random
 import numpy as np
 
