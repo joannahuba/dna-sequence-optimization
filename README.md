@@ -26,7 +26,7 @@ Below is a **production-ready rewrite of your Usage section + Quick Start**, ada
 
 ## Quick start
 
-### Installation (uv-based setup)
+### Installation
 
 This project uses **uv** for environment and dependency management.
 
@@ -242,7 +242,7 @@ This section provides a **high-level entry map of all core modules**, their resp
 Runs full optimization trajectories over DNA sequences.
 
 **What to read:**
- `core/README.md`
+ [core/README.md](src/PromotorOptimizer/core/README.md)
 
 **What it does:**
 
@@ -261,7 +261,7 @@ Runs full optimization trajectories over DNA sequences.
 Top-level entry point for experiments.
 
 **What to read:**
- `pipeline/README.md`
+  [pipeline/README.md](src/PromotorOptimizer/pipeline/README.md)
 
 **What it does:**
 
@@ -280,7 +280,7 @@ Top-level entry point for experiments.
 Defines and manages all neural network models.
 
 **What to read:**
- `models/README.md`
+ [models/README.md](src/PromotorOptimizer/models/README.md)
 
 **What it does:**
 
@@ -300,6 +300,7 @@ Implements mutation-based sequence optimization strategies.
 
 **What to read:**
  `optimizers/README.md`
+  [optimizers/README.md](src/PromotorOptimizer/optimizers/README.md)
 
 **What it does:**
 
@@ -318,7 +319,7 @@ Implements mutation-based sequence optimization strategies.
 Explains model predictions at nucleotide level.
 
 **What to read:**
- `interpreters/README.md`
+   [interpreters/README.md](src/PromotorOptimizer/interpreters/README.md)
 
 **What it does:**
 
@@ -337,7 +338,7 @@ Explains model predictions at nucleotide level.
 Turns raw optimization logs into analytical datasets.
 
 **What to read:**
- `loaders/README.md`
+    [loaders/README.md](src/PromotorOptimizer/loaders/README.md)
 
 **What it does:**
 
@@ -372,7 +373,7 @@ Generates plots and analysis reports from results.
 Detects and visualizes transcription factor motifs in sequences.
 
 **What to read:**
- `extensions/MotifAnalysis/README.md`
+    [extensions/MotifAnalysis/README.md](src/PromotorOptimizer/extensions/MotifAnalysis/README.md)
 
 **What it does:**
 
