@@ -30,7 +30,6 @@ print(f"Starting download for folder ID: {folder_id}")
 gdown.download_folder(
     id=folder_id,
     output=TARGET_DIR,
-    quiet=False,
-    remaining_ok=True
+    quiet=False
 )
 print("Download process completed.")
