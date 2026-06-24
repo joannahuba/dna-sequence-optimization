@@ -167,8 +167,8 @@ def plot_motif_evolution(topn_df):
         )
 
     ax.set_xlabel("Iteration")
-    ax.set_ylabel("Motif frequency (stretched scale)")
-    ax.set_title("Motif evolution (nonlinear Y stretching)")
+    ax.set_ylabel("Motif frequency")
+    ax.set_title("Motif evolution")
 
     # ---------------------------
     # readable ticks (IMPORTANT FIX)
