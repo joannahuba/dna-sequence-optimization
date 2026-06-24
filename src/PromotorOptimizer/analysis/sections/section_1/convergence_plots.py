@@ -31,11 +31,17 @@ def draw_trajectory_cell(
     """
     ## Extract optional parameters from configuration dictionary
     config = config or {}
-    add_ensemble = config.get("add_ensemble_score", True)
+    add_ensemble = config.get("add_ensemble_score_column", False)
     lw = config.get("linewidth", 1.4)
     
     ## Spatial mean aggregation across populations
     score_columns = ['score_deepstarr', 'score_deepstarr_second', 'score_original_modified', 'score_cost_function']
+    
+    ### Dynamic column injection based on structural configuration demands
+    if isinstance(add_ensemble, str) and add_ensemble in df_isolated.columns and add_ensemble not in score_columns:
+        logger.debug("Injecting external ensemble target column: %s into statistical loop", add_ensemble)
+        score_columns.append(add_ensemble)
+        
     trajectory_stats = df_isolated.groupby('iteration')[score_columns].mean().reset_index().sort_values('iteration')
 
     ## Map core validator models to primary coordinate system
@@ -47,11 +53,8 @@ def draw_trajectory_cell(
     if reconstruction_target_expression is not None:
         ax1.axhline(y=reconstruction_target_expression, color='#7f7f7f', linestyle='-', linewidth=1.2, alpha=0.7)
 
+    ## Plot ensemble metric directly on the primary axis to preserve shared scale execution
+    if isinstance(add_ensemble, str) and add_ensemble in trajectory_stats.columns:
+        ax1.plot(trajectory_stats['iteration'], trajectory_stats[add_ensemble], color='#d62728', linestyle='-', linewidth=2.0, label='Ensemble score')
+
     ax1.grid(True, linestyle='--', alpha=0.3, linewidth=0.5)
-
-    ## Orchestrate secondary y-axis mapping for joint metrics
-    if add_ensemble:
-        ax2 = ax1.twinx()
-        ax2.plot(trajectory_stats['iteration'], trajectory_stats['score_cost_function'], color='#d62728', linestyle='-', linewidth=2.0, label='Ensemble')
-        ax2.tick_params(axis='y', labelcolor='#d62728', labelsize=8)
-

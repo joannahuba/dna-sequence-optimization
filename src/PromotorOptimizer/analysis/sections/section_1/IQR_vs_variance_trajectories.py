@@ -24,7 +24,8 @@ logger = get_custom_logger(__name__)
 
 def simulate_trajectory_paths(
     df: pd.DataFrame, 
-    num_simulated_paths: int = 15
+    num_simulated_paths: int = 15,
+    random_state: int = None
 ) -> pd.DataFrame:
     """
     Reconstruct continuous chronological optimization paths by sampling adjacent 
@@ -34,6 +35,8 @@ def simulate_trajectory_paths(
     :type df: pd.DataFrame
     :param num_simulated_paths: Number of parallel stochastic tracks to sample.
     :type num_simulated_paths: int
+    :param random_state: Seed for the random number generator to ensure reproducibility.
+    :type random_state: int
     :return: DataFrame containing individual simulated paths with inline beam mean metrics.
     :rtype: pd.DataFrame
     """
@@ -66,8 +69,12 @@ def simulate_trajectory_paths(
                 iter_candidates = group[group['iteration'] == it]
                 if iter_candidates.empty:
                     continue
+                ### Calculate dynamic pseudo-random seed to guarantee structural variation between paths
+                iter_seed = None
+                if random_state is not None:
+                    iter_seed = random_state + path_idx * 100000 + int(it)
                 ### Sample a single candidate row per iteration to preserve path context
-                sampled_row = iter_candidates.sample(n=1).iloc[0].copy()
+                sampled_row = iter_candidates.sample(n=1, random_state=iter_seed).iloc[0].copy()
                 sampled_row['path_id'] = f"{interp}_{opt}_{model}_{seq}_path_{path_idx}"
                 path_rows.append(sampled_row)
                 
