@@ -29,27 +29,42 @@ def draw_trajectory_cell(
     :type config: Dict[str, Any], optional
     :return: None
     """
-    ## Extract optional parameters from configuration dictionary
+    # Configuration extraction block
+    ## Extract architectural and layout configurations from supplement dictionary
     config = config or {}
     add_ensemble = config.get("add_ensemble_score_column", False)
     lw = config.get("linewidth", 1.4)
     
-    ## Spatial mean aggregation across populations
-    score_columns = ['score_deepstarr', 'score_deepstarr_second', 'score_original_modified', 'score_cost_function']
+    ## Copy score columns slice to prevent downstream dictionary mutations
+    score_columns = list(config.get(
+        'score_columns', 
+        ['score_deepstarr', 'score_deepstarr_second', 'score_original_modified', 'score_cost_function']
+    ))
     
-    ### Dynamic column injection based on structural configuration demands
+    # Dynamic column injection
+    ## Append consolidated compound score target if explicitly defined in runtime configuration
     if isinstance(add_ensemble, str) and add_ensemble in df_isolated.columns and add_ensemble not in score_columns:
         logger.debug("Injecting external ensemble target column: %s into statistical loop", add_ensemble)
         score_columns.append(add_ensemble)
         
+    # Spatial data processing
+    ## Aggregate population snapshots chronologically using grouped mean statistics
     trajectory_stats = df_isolated.groupby('iteration')[score_columns].mean().reset_index().sort_values('iteration')
 
-    ## Map core validator models to primary coordinate system
-    ax1.plot(trajectory_stats['iteration'], trajectory_stats['score_deepstarr'], color='#1f77b4', linestyle='--', linewidth=lw, label='Deepstar')
-    ax1.plot(trajectory_stats['iteration'], trajectory_stats['score_deepstarr_second'], color='#ff7f0e', linestyle=':', linewidth=lw, label='2nd Deepstar')
-    ax1.plot(trajectory_stats['iteration'], trajectory_stats['score_original_modified'], color='#2ca02c', linestyle='-.', linewidth=lw, label='Original')
+    # Mapping target columns dynamically
+    ## Map target models based on positional indices to bypass hardcoded name requirements
+    col_deepstarr = score_columns[0]
+    col_deepstarr_second = score_columns[1]
+    col_original_modified = score_columns[2]
 
-    ## Render static target baseline bounds
+    # Coordinate system rendering execution
+    ## Plot structural model variations on primary axes interface
+    ax1.plot(trajectory_stats['iteration'], trajectory_stats[col_deepstarr], color='#1f77b4', linestyle='--', linewidth=lw, label='Deepstar')
+    ax1.plot(trajectory_stats['iteration'], trajectory_stats[col_deepstarr_second], color='#ff7f0e', linestyle=':', linewidth=lw, label='2nd Deepstar')
+    ax1.plot(trajectory_stats['iteration'], trajectory_stats[col_original_modified], color='#2ca02c', linestyle='-.', linewidth=lw, label='Original')
+
+    # Boundary overlays
+    ## Render static target baseline bounds if present
     if reconstruction_target_expression is not None:
         ax1.axhline(y=reconstruction_target_expression, color='#7f7f7f', linestyle='-', linewidth=1.2, alpha=0.7)
 
