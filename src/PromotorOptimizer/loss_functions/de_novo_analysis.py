@@ -87,3 +87,121 @@ def extract_adaptive_de_novo_motifs(df, target_seq="seq_4_no_active", min_k=6, m
         'observed_frequency': max_density_score,
         'adaptive_position_frequency_matrix': best_pfm.tolist() if best_pfm is not None else []
     }
+
+
+import numpy as np
+import pandas as pd
+from collections import defaultdict
+
+
+def motif_evolution_analysis(
+    df,
+    target_seq="seq_4_no_active",
+    min_k=6,
+    max_k=14,
+    top_n=5,
+):
+    """
+    Track top de novo motifs across optimization iterations.
+
+    Returns
+    -------
+    pd.DataFrame
+
+    Columns:
+        iteration
+        rank
+        motif
+        frequency
+        kmer_length
+    """
+
+    sub_df = df[df["sequence_name"] == target_seq].copy()
+
+    if sub_df.empty:
+        raise ValueError(f"No rows found for {target_seq}")
+
+    results = []
+
+    for iteration in sorted(sub_df["iteration"].unique()):
+
+        iter_df = sub_df[sub_df["iteration"] == iteration]
+
+        all_kmers = []
+
+        for kmer_len in range(min_k, max_k + 1):
+
+            kmer_counts = defaultdict(int)
+
+            for _, row in iter_df.iterrows():
+
+                sequence_string = row["current_sequence"]
+                weights_array = np.abs(
+                    np.array(row["interpreter_weights"])
+                )
+
+                if np.sum(weights_array) == 0:
+                    continue
+
+                normalized_w = weights_array / np.sum(weights_array)
+
+                shannon_h = -np.sum(
+                    normalized_w * np.log2(normalized_w + 1e-12)
+                )
+
+                max_h = np.log2(len(weights_array))
+
+                adaptive_quantile = (
+                    0.50
+                    + 0.45 * (1.0 - (shannon_h / max_h))
+                )
+
+                cutoff_threshold = np.quantile(
+                    weights_array,
+                    adaptive_quantile
+                )
+
+                for i in range(
+                    len(sequence_string) - kmer_len + 1
+                ):
+
+                    window_seq = sequence_string[
+                        i:i+kmer_len
+                    ]
+
+                    window_w = weights_array[
+                        i:i+kmer_len
+                    ]
+
+                    if np.mean(window_w) >= cutoff_threshold:
+                        kmer_counts[window_seq] += 1
+
+            for motif, count in kmer_counts.items():
+
+                all_kmers.append(
+                    {
+                        "motif": motif,
+                        "frequency": count,
+                        "kmer_length": kmer_len,
+                    }
+                )
+
+        if len(all_kmers) == 0:
+            continue
+
+        motifs_df = (
+            pd.DataFrame(all_kmers)
+            .sort_values("frequency", ascending=False)
+            .head(top_n)
+            .reset_index(drop=True)
+        )
+
+        motifs_df["iteration"] = iteration
+        motifs_df["rank"] = np.arange(
+            1,
+            len(motifs_df) + 1
+        )
+
+        results.append(motifs_df)
+
+    return pd.concat(results, ignore_index=True)
